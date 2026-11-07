@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Симулятор: Гора Бештау</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; }
+        #info { position: absolute; top: 10px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 3px black; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: white; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: width 0.1s, height 0.1s; }
+        #blocker { position: absolute; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        #instructions { color: white; text-align: center; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
+        #hint {
+            position: absolute; top: 55%; left: 50%; transform: translateX(-50%);
+            color: #ffff66; text-shadow: 1px 1px 4px black; font-weight: bold;
+            font-size: 18px; pointer-events: none; display: none; white-space: nowrap;
+        }
+        #summitNotification {
+            position: absolute;
+            top: 28%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            color: #fff;
+            background: rgba(0, 0, 0, 0.78);
+            padding: 22px 46px;
+            border-radius: 14px;
+            border: 2px solid #ffd700;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 6px black;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.55);
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+            z-index: 100;
+        }
+        #summitNotification.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    </style>
+</head>
+<body>
+    <div id="blocker">
+        <div id="instructions">
+            <h2>Бештау.</h2>
+            <p>Нажмите, чтобы начать</p>
+            <p>W, A, S, D - движение<br>Shift - очень быстрый бег<br>Space - прыжок<br>Мышь - осмотр</p>
+            <p>Исследуйте склоны и недра горы.</p>
+            <p>Соберите 20т урановой руды.</p>
+            <p>Поднимитесь на вершину.</p>
+        </div>
+    </div>
+    <div id="info">Высота: <span id="altitude">0</span> м</div>
+    <div id="crosshair"></div>
+    <div id="hint">Нажмите, чтобы войти в штольню</div>
+    <div id="summitNotification">Вы достигли вершины горы</div>
+
+    <!-- Локальные библиотеки (без интернета) -->
+    <script src="data/js/three.min.js"></script>
+    <script src="data/js/PointerLockControls.js"></script>
+
+    <script>
+        // --- 0. Глобальный масштаб горы ---
+        const WORLD_SCALE = 1.5;
+
+        // --- 0.1. Возврат игрока из штольни ---
+        // При входе в штольню запоминаем точку, где стоял игрок, направление взгляда
+        // и саму штольню (её координаты/угол), чтобы после выхода из рудника
+        // оказаться ровно там же.
+        const MINE_PAGE_URL = 'data/shtolnya31.html';
+        const RETURN_STATE_KEY = 'beshtau_return_state_v1';
+        const RETURN_STATE_TTL = 1000 * 60 * 60 * 12; // 12 часов
+
+        function saveReturnState(aditInfo) {
+            try {
+                const state = {
+                    px: camera.position.x,
+                    py: camera.position.y,
+                    pz: camera.position.z,
+                    qx: camera.quaternion.x,
+                    qy: camera.quaternion.y,
+                    qz: camera.quaternion.z,
+                    qw: camera.quaternion.w,
+                    adit: aditInfo || null,
+                    t: Date.now()
+                };
+                localStorage.setItem(RETURN_STATE_KEY, JSON.stringify(state));
+            } catch (e) { /* localStorage может быть недоступен */ }
+        }
+
+        function loadReturnState() {
+            try {
+                const raw = localStorage.getItem(RETURN_STATE_KEY);
+                if (!raw) return null;
+                const s = JSON.parse(raw);
+                if (!s || !isFinite(s.px) || !isFinite(s.py) || !isFinite(s.pz)) return null;
+                if (!s.t || (Date.now() - s.t) > RETURN_STATE_TTL) {
+                    localStorage.removeItem(RETURN_STATE_KEY);
+                    return null;
+                }
+                return s;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function clearReturnState() {
+            try { localStorage.removeItem(RETURN_STATE_KEY); } catch (e) { /* ignore */ }
+        }
+
+        const returnState = loadReturnState();
+
+        // --- 1. Базовые настройки сцены ---
+        const scene = new THREE.Scene();
+        const fogColor = 0xD0D5D8;
+
+        scene.background = new THREE.Color(fogColor);
+        scene.fog = new THREE.Fog(fogColor, 300 * WORLD_SCALE, 2200 * WORLD_SCALE);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 15000);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // Освещение
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+        hemiLight.position.set(0, 2000 * WORLD_SCALE, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(1000 * WORLD_SCALE, 2000 * WORLD_SCALE, 500 * WORLD_SCALE);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left   = -2000 * WORLD_SCALE;
+        dirLight.shadow.camera.right  =  2000 * WORLD_SCALE;
+        dirLight.shadow.camera.top    =  2000 * WORLD_SCALE;
+        dirLight.shadow.camera.bottom = -2000 * WORLD_SCALE;
+        dirLight.shadow.mapSize.width  = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        // --- 2. Функции высоты ландшафта ---
+        const terrainSize = 6000 * WORLD_SCALE;  // 9000
+        const segments = 384;                    // ~23 м/сегмент
+
+        const roadWidth = 25;
+        const roadMeshWidth = 16;
+        const targetRoadY = 600 * WORLD_SCALE;   // 900
+        const numRoadPoints = 720;
+
+        function getSmoothTerrainHeight(x, z) {
+            x /= WORLD_SCALE;
+            z /= WORLD_SCALE;
+
+            let h = 0;
+            h += 350 * Math.exp(-(x*x + z*z) / (2 * 1600 * 1600));
+
+            const peaks = [
+                { x: 0,     z: 0,   height: 1150, radius: 450 },
+                { x: -1250, z: 200, height: 800,  radius: 380 },
+                { x: 1200,  z: 100, height: 700,  radius: 380 }
+            ];
+            peaks.forEach(p => {
+                const d = Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z));
+                h += p.height * Math.exp(-(d * d) / (2 * p.radius * p.radius));
+            });
+
+            if (h < 20) h = 20;
+            return h * WORLD_SCALE;
+        }
+
+        function getTerrainHeight(x, z) {
+            const wx = x / WORLD_SCALE;
+            const wz = z / WORLD_SCALE;
+
+            let h = getSmoothTerrainHeight(x, z);
+
+            const detailNoise = (Math.sin(wx * 0.05) * Math.cos(wz * 0.05) * 20
+                               + Math.sin(wx * 0.10) * Math.cos(wz * 0.10) * 10) * WORLD_SCALE;
+
+            const hillNoise = (Math.sin(wx * 0.0035 + 1.3) * Math.cos(wz * 0.0042 + 2.1) * 34
+                             + Math.sin(wx * 0.0070 + 0.5) * Math.cos(wz * 0.0080 + 1.7) * 16
+                             + Math.sin(wx * 0.0110 + 4.2) * Math.cos(wz * 0.0100 + 3.3) * 7) * WORLD_SCALE;
+
+            const footWeight = 1.0 - THREE.MathUtils.smoothstep(h, 330 * WORLD_SCALE, 500 * WORLD_SCALE);
+
+            h += hillNoise * footWeight;
+            h += detailNoise * (1.0 - footWeight * 0.85);
+
+            const minH = 20 * WORLD_SCALE;
+            if (h < minH) h = minH;
+            return h;
+        }
+
+        // --- 2.1. Профиль высоты дороги ---
+        function roadElevationOffset(angle) {
+            let d = 0;
+            d += Math.sin(angle * 2.3  + 0.70) * 28.0 * WORLD_SCALE;
+            d += Math.sin(angle * 5.7  + 2.10) * 14.0 * WORLD_SCALE;
+            d += Math.sin(angle * 11.1 + 4.30) * 6.0  * WORLD_SCALE;
+            d += Math.sin(angle * 19.3 + 1.10) * 3.0  * WORLD_SCALE;
+            d += Math.sin(angle * 31.7 + 5.70) * 1.2  * WORLD_SCALE;
+            return d;
+        }
+
+        function roadHeightAt(angle) {
+            return targetRoadY + roadElevationOffset(angle);
+        }
+
+        function ledgeNoise(x, z) {
+            const s = WORLD_SCALE;
+            return Math.sin(x / s * 0.11) * Math.cos(z / s * 0.13) * 0.8 * s
+                 + Math.sin(x / s * 0.27 + z / s * 0.19) * 0.35 * s;
+        }
+
+        // --- 3. Трассировка контура дороги ---
+        let rawRadii = [];
+        for (let i = 0; i < numRoadPoints; i++) {
+            const angle = (i / numRoadPoints) * Math.PI * 2;
+            const localRoadY = roadHeightAt(angle);
+            let scanR = 2800 * WORLD_SCALE;
+            let step = 10;
+            let found = false;
+
+            while (scanR > 100 * WORLD_SCALE) {
+                const x = Math.cos(angle) * scanR;
+                const z = Math.sin(angle) * scanR;
+                if (getSmoothTerrainHeight(x, z) >= localRoadY) {
+                    let low = scanR;
+                    let high = scanR + step;
+                    for (let j = 0; j < 15; j++) {
+                        let mid = (low + high) / 2;
+                        const mx = Math.cos(angle) * mid;
+                        const mz = Math.sin(angle) * mid;
+                        if (getSmoothTerrainHeight(mx, mz) >= localRoadY) {
+                            low = mid;
+                        } else {
+                            high = mid;
+                        }
+                    }
+                    rawRadii.push((low + high) / 2);
+                    found = true;
+                    break;
+                }
+                scanR -= step;
+            }
+            if (!found) rawRadii.push(1800 * WORLD_SCALE);
+        }
+
+        const roadRadii = [];
+        for (let i = 0; i < numRoadPoints; i++) {
+            let sum = 0;
+            for (let j = -3; j <= 3; j++) {
+                const idx = (i + j + numRoadPoints) % numRoadPoints;
+                sum += rawRadii[idx];
+            }
+            roadRadii.push(sum / 7);
+        }
+
+        // --- 4. Генерация ландшафта ---
+        const blendWidth = 90;
+
+        function getActualTerrainHeight(x, z) {
+            const naturalH = getTerrainHeight(x, z);
+
+            const angle = Math.atan2(z, x);
+            let normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+
+            const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+            const roadR = roadRadii[idx];
+
+            const distToCenter = Math.sqrt(x * x + z * z);
+            const distToRoad = Math.abs(distToCenter - roadR);
+
+            const halfRoad = roadWidth / 2;
+            const localRoadY = roadHeightAt(normAngle);
+
+            const bumpWeight = THREE.MathUtils.smoothstep(
+                (distToRoad - roadMeshWidth / 2) / 6, 0, 1);
+            const bump = ledgeNoise(x, z) * bumpWeight;
+
+            if (distToRoad <= halfRoad) {
+                return localRoadY + bump;
+            }
+            else if (distToRoad < halfRoad + blendWidth) {
+                const t = (distToRoad - halfRoad) / blendWidth;
+                const s = THREE.MathUtils.smoothstep(t, 0, 1);
+                return THREE.MathUtils.lerp(localRoadY + bump, naturalH, s);
+            }
+
+            return naturalH;
+        }
+
+        const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, segments, segments);
+        geometry.rotateX(-Math.PI / 2);
+
+        const positionAttribute = geometry.attributes.position;
+        const vertex = new THREE.Vector3();
+        const colors = [];
+        const color = new THREE.Color();
+        const naturalColor = new THREE.Color();
+
+        const shoulderColor = new THREE.Color(0x5A6345);
+
+        for (let i = 0; i < positionAttribute.count; i++) {
+            vertex.fromBufferAttribute(positionAttribute, i);
+            const h = getActualTerrainHeight(vertex.x, vertex.z);
+            positionAttribute.setY(i, h);
+
+            if      (h <  350  * WORLD_SCALE) naturalColor.setHex(0x2E4A21);
+            else if (h <= 1000 * WORLD_SCALE) naturalColor.setHex(0x2E4A21);
+            else if (h <  1200 * WORLD_SCALE) naturalColor.setHex(0x5A6345);
+            else                              naturalColor.setHex(0x8B8C89);
+
+            const x = vertex.x;
+            const z = vertex.z;
+            const distToCenter = Math.sqrt(x * x + z * z);
+            const angle = Math.atan2(z, x);
+            let normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+            const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+            const roadR = roadRadii[idx];
+            const distToRoad = Math.abs(distToCenter - roadR);
+            const halfRoad = roadWidth / 2;
+
+            if (distToRoad <= halfRoad) {
+                color.copy(shoulderColor);
+            } else if (distToRoad < halfRoad + blendWidth) {
+                const t = (distToRoad - halfRoad) / blendWidth;
+                color.copy(shoulderColor).lerp(naturalColor, THREE.MathUtils.smoothstep(t, 0, 1));
+            } else {
+                color.copy(naturalColor);
+            }
+
+            colors.push(color.r, color.g, color.b);
+        }
+
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.computeVertexNormals();
+
+        const terrainMaterial = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.8,
+            flatShading: true,
+            side: THREE.DoubleSide
+        });
+        const terrain = new THREE.Mesh(geometry, terrainMaterial);
+        terrain.receiveShadow = true;
+        terrain.castShadow = true;
+        scene.add(terrain);
+
+        // --- 5. Генерация узкого серого полотна дороги ---
+        const roadVertices = [];
+        const roadIndices = [];
+
+        for (let i = 0; i <= numRoadPoints; i++) {
+            const idx = i % numRoadPoints;
+            const prevIdx = (i - 1 + numRoadPoints) % numRoadPoints;
+            const nextIdx = (i + 1) % numRoadPoints;
+
+            const angle = (idx / numRoadPoints) * Math.PI * 2;
+            const r = roadRadii[idx];
+
+            const cx = Math.cos(angle) * r;
+            const cz = Math.sin(angle) * r;
+
+            const prevAngle = (prevIdx / numRoadPoints) * Math.PI * 2;
+            const nextAngle = (nextIdx / numRoadPoints) * Math.PI * 2;
+            const pr = roadRadii[prevIdx];
+            const nr = roadRadii[nextIdx];
+
+            const px = Math.cos(prevAngle) * pr;
+            const pz = Math.sin(prevAngle) * pr;
+            const nx = Math.cos(nextAngle) * nr;
+            const nz = Math.sin(nextAngle) * nr;
+
+            const tx = nx - px;
+            const tz = nz - pz;
+            const len = Math.sqrt(tx*tx + tz*tz);
+
+            const nx_perp = -tz / len;
+            const nz_perp = tx / len;
+
+            const roadY = roadHeightAt(angle) + 0.15;
+
+            const leftX = cx + nx_perp * (roadMeshWidth / 2);
+            const leftZ = cz + nz_perp * (roadMeshWidth / 2);
+            const rightX = cx - nx_perp * (roadMeshWidth / 2);
+            const rightZ = cz - nz_perp * (roadMeshWidth / 2);
+
+            roadVertices.push(leftX, roadY, leftZ);
+            roadVertices.push(rightX, roadY, rightZ);
+
+            if (i < numRoadPoints) {
+                const vIdx = i * 2;
+                roadIndices.push(vIdx, vIdx + 1, vIdx + 2);
+                roadIndices.push(vIdx + 1, vIdx + 3, vIdx + 2);
+            }
+        }
+
+        const roadGeo = new THREE.BufferGeometry();
+        roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+        roadGeo.setIndex(roadIndices);
+        roadGeo.computeVertexNormals();
+
+        const roadMat = new THREE.MeshStandardMaterial({
+            color: 0x666666,
+            roughness: 0.9,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
+
+        const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+        roadMesh.receiveShadow = true;
+        scene.add(roadMesh);
+
+        // --- 5.5 Генерация входа в урановый рудник (исходная штольня) ---
+
+        // Если игрок возвращается из этой штольни — восстанавливаем её прежний угол,
+        // чтобы вход оказался ровно там же, где игрок его покинул.
+        const savedAdit = (returnState && returnState.adit) ? returnState.adit : null;
+
+        const mineAngle = (savedAdit && savedAdit.isMain && isFinite(savedAdit.angle))
+            ? savedAdit.angle
+            : Math.random() * Math.PI * 2;
+
+        const mineIdx = Math.floor((mineAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+        const mineR = roadRadii[mineIdx];
+        const mineY = roadHeightAt(mineAngle);
+
+        const inwardOffset = 12;
+        const mineX = Math.cos(mineAngle) * (mineR - inwardOffset);
+        const mineZ = Math.sin(mineAngle) * (mineR - inwardOffset);
+
+        const mineGroup = new THREE.Group();
+        mineGroup.position.set(mineX, mineY, mineZ);
+
+        const lookTarget = new THREE.Vector3(Math.cos(mineAngle) * mineR, mineY, Math.sin(mineAngle) * mineR);
+        mineGroup.lookAt(lookTarget);
+
+        function createCanvasTexture(drawCallback, width=256, height=256) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            drawCallback(ctx, width, height);
+            const texture = new THREE.CanvasTexture(canvas);
+            if (THREE.sRGBEncoding !== undefined) {
+                texture.encoding = THREE.sRGBEncoding;
+            } else if (THREE.SRGBColorSpace !== undefined) {
+                texture.colorSpace = THREE.SRGBColorSpace;
+            }
+            return texture;
+        }
+
+        const radiationTex = createCanvasTexture((ctx, w, h) => {
+            ctx.fillStyle = '#FFC107';
+            ctx.fillRect(0, 0, w, h);
+            ctx.lineWidth = 12;
+            ctx.strokeStyle = '#000';
+            ctx.strokeRect(10, 10, w-20, h-20);
+
+            const cx = w/2, cy = h/2 + 10;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, 18, 0, Math.PI*2);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+
+            for(let i=0; i<3; i++) {
+                ctx.beginPath();
+                const angle = i * (Math.PI * 2 / 3) - Math.PI/2;
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, 60, angle - Math.PI/6, angle + Math.PI/6);
+                ctx.closePath();
+                ctx.fill();
+            }
+        });
+
+        function createSignTexture(text) {
+            return createCanvasTexture((ctx, w, h) => {
+                ctx.fillStyle = '#c8c8c8';
+                ctx.fillRect(0, 0, w, h);
+
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+                grad.addColorStop(0.5, 'rgba(255,255,255,0.0)');
+                grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = 'bold 45px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, w/2, h/2);
+
+                ctx.fillStyle = 'rgba(139, 69, 19, 0.15)';
+                ctx.fillRect(0, 0, w, 10);
+                ctx.fillRect(0, h-15, w, 15);
+            }, 512, 128);
+        }
+
+        const signTex = createSignTexture('ШТОЛЬНЯ 31');
+
+        // Генерируем текстуру бетона/камня
+        const concreteTex = createCanvasTexture((ctx, w, h) => {
+            // Базовый цвет
+            ctx.fillStyle = '#8a8378';
+            ctx.fillRect(0, 0, w, h);
+            
+            // 1. Добавляем мелкий шум (зернистость камня)
+            for (let i = 0; i < 4000; i++) {
+                const x = Math.random() * w;
+                const y = Math.random() * h;
+                const size = Math.random() * 3 + 1;
+                const alpha = Math.random() * 0.25;
+                // Чередуем темные и светлые точки
+                ctx.fillStyle = Math.random() > 0.5 ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
+                ctx.fillRect(x, y, size, size);
+            }
+            
+            // 2. Добавляем трещины
+            ctx.strokeStyle = 'rgba(40, 35, 30, 0.4)';
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < 15; i++) {
+                ctx.beginPath();
+                let x = Math.random() * w;
+                let y = Math.random() * h;
+                ctx.moveTo(x, y);
+                // Рисуем ломаную линию трещины
+                for (let j = 0; j < 4; j++) {
+                    x += (Math.random() - 0.5) * 60;
+                    y += (Math.random() - 0.5) * 60;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+        }, 256, 256);
+
+        // Настраиваем повторение текстуры
+        concreteTex.wrapS = THREE.RepeatWrapping;
+        concreteTex.wrapT = THREE.RepeatWrapping;
+        // END/ Генерируем текстуру бетона/камня
+
+        // 1. Клонируем текстуру для столбов и настраиваем повтор (по высоте)
+        const pillarTex = concreteTex.clone();
+        pillarTex.needsUpdate = true;
+        pillarTex.wrapS = THREE.RepeatWrapping;
+        pillarTex.wrapT = THREE.RepeatWrapping;
+        pillarTex.repeat.set(1, 3); // 1 раз по ширине, 3 раза по высоте
+
+        // 2. Клонируем текстуру для перемычки (по длине)
+        const lintelTex = concreteTex.clone();
+        lintelTex.needsUpdate = true;
+        lintelTex.wrapS = THREE.RepeatWrapping;
+        lintelTex.wrapT = THREE.RepeatWrapping;
+        lintelTex.repeat.set(4, 1); // 4 раза по длине, 1 раз по высоте
+
+        // 3. Создаем материал для столбов
+        const concreteMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,      // Белый цвет, чтобы не затемнять текстуру
+            map: pillarTex,
+            bumpMap: pillarTex,
+            bumpScale: 0.05,
+            roughness: 0.9,
+            flatShading: true,
+            emissive: new THREE.Color(0x222222), 
+            emissiveIntensity: 1.0
+        });
+
+        // 4. Создаем отдельный материал для перемычки (чтобы текстура не тянулась)
+        const lintelMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: lintelTex,
+            bumpMap: lintelTex,
+            bumpScale: 0.05,
+            roughness: 0.9,
+            flatShading: true,
+            emissive: new THREE.Color(0x222222), 
+            emissiveIntensity: 1.0
+        });
+
+        const darkInteriorMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+        const rustyDoorMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8, metalness: 0.6 });
+
+        const interiorGeo = new THREE.BoxGeometry(8, 8, 15);
+        const interiorMesh = new THREE.Mesh(interiorGeo, darkInteriorMat);
+        interiorMesh.position.set(0, 4, -7.5);
+        mineGroup.add(interiorMesh);
+
+        const pillarGeo = new THREE.BoxGeometry(3, 10, 4);
+        const leftPillar = new THREE.Mesh(pillarGeo, concreteMat);
+        leftPillar.position.set(-5.5, 5, 0);
+        leftPillar.castShadow = true;
+        leftPillar.receiveShadow = true;
+        mineGroup.add(leftPillar);
+
+        const rightPillar = new THREE.Mesh(pillarGeo, concreteMat);
+        rightPillar.position.set(5.5, 5, 0);
+        rightPillar.castShadow = true;
+        rightPillar.receiveShadow = true;
+        mineGroup.add(rightPillar);
+
+        const lintelGeo = new THREE.BoxGeometry(14, 3, 4.5);
+        const lintel = new THREE.Mesh(lintelGeo, lintelMat);
+        lintel.position.set(0, 11.5, 0);
+        lintel.castShadow = true;
+        mineGroup.add(lintel);
+
+        const doorGeo = new THREE.BoxGeometry(7, 8, 0.2);
+        const door = new THREE.Mesh(doorGeo, rustyDoorMat);
+        door.position.set(2.5, 4, 1);
+        door.rotation.y = -0.4;
+        door.castShadow = true;
+        mineGroup.add(door);
+
+        const signGeo = new THREE.PlaneGeometry(6, 1.5);
+        const signMat = new THREE.MeshBasicMaterial({ map: signTex });
+        const sign = new THREE.Mesh(signGeo, signMat);
+        sign.position.set(0, 9.5, 2.26);
+        mineGroup.add(sign);
+
+        const radGeo = new THREE.PlaneGeometry(2, 2);
+        const radMat = new THREE.MeshBasicMaterial({ map: radiationTex });
+        const radSign = new THREE.Mesh(radGeo, radMat);
+        radSign.position.set(0.5, 5, 1.15);
+        radSign.rotation.y = 0.2;
+        mineGroup.add(radSign);
+
+        const radHitboxGeo = new THREE.PlaneGeometry(4, 4);
+        const radHitboxMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+        const radHitbox = new THREE.Mesh(radHitboxGeo, radHitboxMat);
+        radHitbox.position.copy(radSign.position);
+        radHitbox.rotation.copy(radSign.rotation);
+        radHitbox.position.z -= 0.02;
+        // Данные штольни — чтобы запомнить точку входа и потом восстановить её
+        radHitbox.userData.url = MINE_PAGE_URL;
+        radHitbox.userData.aditInfo = {
+            isMain: true,
+            label: 'ШТОЛЬНЯ 31',
+            x: mineX,
+            y: mineY,
+            z: mineZ,
+            angle: mineAngle,
+            url: MINE_PAGE_URL
+        };
+        mineGroup.add(radHitbox);
+
+        scene.add(mineGroup);
+
+        // --- 5.6. Дополнительные штольни на склонах ---
+        const aditLabels = ['Штольня 13', 'Штольня 27', 'Штольня 41'];
+        const allMineGroups = [mineGroup];
+        const aditPositions = [{ x: mineX, z: mineZ }];
+
+        // Хитбоксы табличек всех дополнительных штолен (для наведения/клика)
+        const aditHitboxes = [];
+
+        // Глубина, на которую задняя часть штольни уходит в склон (в единицах мира)
+        const embedDepth = 6;
+
+        function createAdit(label, x, y, z, angle, url = MINE_PAGE_URL) {
+            const group = new THREE.Group();
+
+            // Направление "наружу от горы" (от центра к точке установки)
+            const outward = new THREE.Vector3(x, 0, z);
+            if (outward.lengthSq() < 1e-6) outward.set(0, 0, 1);
+            outward.normalize();
+
+            // Смещаем группу внутрь склона, чтобы интерьер утонул в породе,
+            // а портал остался у поверхности.
+            const gx = x - outward.x * embedDepth;
+            const gz = z - outward.z * embedDepth;
+            group.position.set(gx, y, gz);
+
+            // Ориентируем +Z группы НАРУЖУ (вход смотрит от склона),
+            // интерьер (смещение -7.5 по Z) уходит внутрь горы.
+            const lookTarget = new THREE.Vector3(gx + outward.x, y, gz + outward.z);
+            group.lookAt(lookTarget);
+
+            const interior = new THREE.Mesh(interiorGeo, darkInteriorMat);
+            interior.position.set(0, 4, -7.5);
+            group.add(interior);
+
+            const leftPillar = new THREE.Mesh(pillarGeo, concreteMat);
+            leftPillar.position.set(-5.5, 5, 0);
+            leftPillar.castShadow = true;
+            leftPillar.receiveShadow = true;
+            group.add(leftPillar);
+
+            const rightPillar = new THREE.Mesh(pillarGeo, concreteMat);
+            rightPillar.position.set(5.5, 5, 0);
+            rightPillar.castShadow = true;
+            rightPillar.receiveShadow = true;
+            group.add(rightPillar);
+
+            const lintel = new THREE.Mesh(lintelGeo, concreteMat);
+            lintel.position.set(0, 11.5, 0);
+            lintel.castShadow = true;
+            group.add(lintel);
+
+            const door = new THREE.Mesh(doorGeo, rustyDoorMat);
+            door.position.set(2.5, 4, 1);
+            door.rotation.y = -0.4;
+            door.castShadow = true;
+            group.add(door);
+
+            const signTexture = createSignTexture(label);
+            const signMat = new THREE.MeshBasicMaterial({ map: signTexture });
+            const sign = new THREE.Mesh(signGeo, signMat);
+            sign.position.set(0, 9.5, 2.26);
+            group.add(sign);
+
+            // Знак радиации (как у штольни 31)
+            const radMatAdit = new THREE.MeshBasicMaterial({ map: radiationTex });
+            const radSign = new THREE.Mesh(radGeo, radMatAdit);
+            radSign.position.set(0.5, 5, 1.15);
+            radSign.rotation.y = 0.2;
+            group.add(radSign);
+
+            // Невидимый хитбокс для наведения/клика
+            const radHitboxMatAdit = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+            const radHitbox = new THREE.Mesh(radHitboxGeo, radHitboxMatAdit);
+            radHitbox.position.copy(radSign.position);
+            radHitbox.rotation.copy(radSign.rotation);
+            radHitbox.position.z -= 0.02;
+            radHitbox.userData.url = url;
+            // Данные штольни — для восстановления точки входа после выхода из рудника
+            radHitbox.userData.aditInfo = {
+                isMain: false,
+                label: label,
+                x: x,
+                y: y,
+                z: z,
+                angle: angle,
+                url: url
+            };
+            group.add(radHitbox);
+
+            aditHitboxes.push(radHitbox);
+
+            return group;
+        }
+
+        function findAditPosition(existingPositions, minDistToRoad = 100, minDistToOthers = 150) {
+            const maxAttempts = 2000;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const angle = Math.random() * Math.PI * 2;
+                const r = 500 + Math.random() * 2500;
+                const x = Math.cos(angle) * r;
+                const z = Math.sin(angle) * r;
+                const h = getActualTerrainHeight(x, z);
+                if (h < 400 || h > 1400) continue;
+
+                const normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+                const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+                const roadR = roadRadii[idx];
+                const distToRoad = Math.abs(r - roadR);
+                if (distToRoad < minDistToRoad) continue;
+
+                let tooClose = false;
+                for (const pos of existingPositions) {
+                    const dx = x - pos.x;
+                    const dz = z - pos.z;
+                    if (Math.sqrt(dx * dx + dz * dz) < minDistToOthers) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) continue;
+
+                return { x, y: h, z, angle };
+            }
+            console.warn('Не удалось найти идеальное место для штольни, использую запасное');
+            const angle = Math.random() * Math.PI * 2;
+            const r = 1500;
+            const x = Math.cos(angle) * r;
+            const z = Math.sin(angle) * r;
+            const h = getActualTerrainHeight(x, z);
+            return { x, y: h, z, angle };
+        }
+
+        // Если игрок возвращается из одной из боковых штолен — ставим её первой
+        // ровно на то место, где она была, остальные генерируем как обычно.
+        let pendingSavedAdit = (savedAdit && !savedAdit.isMain) ? savedAdit : null;
+
+        aditLabels.forEach(label => {
+            let pos = null;
+            let useLabel = label;
+
+            if (pendingSavedAdit) {
+                const s = pendingSavedAdit;
+                pendingSavedAdit = null;
+                if (isFinite(s.x) && isFinite(s.z) && isFinite(s.angle)) {
+                    useLabel = s.label || label;
+                    pos = {
+                        x: s.x,
+                        z: s.z,
+                        y: isFinite(s.y) ? s.y : getActualTerrainHeight(s.x, s.z),
+                        angle: s.angle
+                    };
+                }
+            }
+
+            if (!pos) pos = findAditPosition(aditPositions);
+
+            const adit = createAdit(useLabel, pos.x, pos.y, pos.z, pos.angle);
+            scene.add(adit);
+            allMineGroups.push(adit);
+            aditPositions.push({ x: pos.x, z: pos.z });
+        });
+
+
+        // --- 5.7. Разрушенные бетонные конструкции ---
+        const ruinGeo = new THREE.BoxGeometry(1, 1, 1);        
+
+        const ruinMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, // Ставим белый, чтобы цвет брался из текстуры
+            map: concreteTex,
+            bumpMap: concreteTex, // Используем ту же текстуру для рельефа
+            bumpScale: 0.05,      // Сила рельефа (можно увеличить для грубого камня)
+            roughness: 0.85, // шероховатость
+            flatShading: true,
+            emissive: new THREE.Color(0x333333), // Легкое серое свечение
+            emissiveIntensity: 1.0
+        });
+
+        const ruinCount = 350;
+        const ruins = new THREE.InstancedMesh(ruinGeo, ruinMat, ruinCount);
+        ruins.castShadow = true;
+        ruins.receiveShadow = true;
+
+        const ruinDummy = new THREE.Object3D();
+        let placedRuins = 0;
+
+        // Добавляем множитель размера (например, 2.5 — увеличит всё в 2.5 раза)
+        const RUIN_SCALE = 3.5; 
+
+        function applyRuinTransform(x, z, h) {
+            const type = Math.random();
+            let sx, sy, sz, tiltX, tiltZ;
+            if (type < 0.30) {
+                // стена
+                sx = 3 + Math.random() * 4;
+                sy = 3 + Math.random() * 3;
+                sz = 0.3 + Math.random() * 0.4;
+                tiltX = (Math.random() - 0.5) * 0.5;
+                tiltZ = (Math.random() - 0.5) * 0.2;
+            } else if (type < 0.50) {
+                // плита
+                sx = 4 + Math.random() * 4;
+                sy = 0.3 + Math.random() * 0.3;
+                sz = 3 + Math.random() * 3;
+                tiltX = (Math.random() - 0.5) * 0.3;
+                tiltZ = (Math.random() - 0.5) * 0.3;
+            } else if (type < 0.70) {
+                // столб
+                sx = 0.6 + Math.random() * 0.6;
+                sy = 3 + Math.random() * 4;
+                sz = 0.6 + Math.random() * 0.6;
+                tiltX = (Math.random() - 0.5) * 0.5;
+                tiltZ = (Math.random() - 0.5) * 0.5;
+            } else {
+                // обломок
+                sx = 1.5 + Math.random() * 3;
+                sy = 1 + Math.random() * 2.5;
+                sz = 1.5 + Math.random() * 3;
+                tiltX = (Math.random() - 0.5) * 0.4;
+                tiltZ = (Math.random() - 0.5) * 0.4;
+            }
+
+            // Применяем множитель ко всем размерам
+            sx *= RUIN_SCALE;
+            sy *= RUIN_SCALE;
+            sz *= RUIN_SCALE;
+
+            // ВАЖНО: позиция по Y должна считаться ПОСЛЕ применения масштаба,
+            // чтобы объект правильно стоял на земле (h + половина высоты)
+            // Я также немного увеличил "утопление" в землю (- 1.0 вместо - 0.5), 
+            // чтобы массивные обломки не казались парящими на склонах.
+            ruinDummy.position.set(x, h + sy / 2 - 1.0, z);
+            
+            ruinDummy.rotation.set(tiltX, Math.random() * Math.PI * 2, tiltZ);
+            ruinDummy.scale.set(sx, sy, sz);
+            ruinDummy.updateMatrix();
+            ruins.setMatrixAt(placedRuins, ruinDummy.matrix);
+            
+            placedRuins++;
+        }
+
+        function addRuinCluster(cx, cz, count) {
+            for (let i = 0; i < count && placedRuins < ruinCount; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const r = Math.random() * 90; // диаметр кластера руин
+                const x = cx + Math.cos(a) * r;
+                const z = cz + Math.sin(a) * r;
+                const h = getActualTerrainHeight(x, z);
+                if (h > 1400) continue;
+                applyRuinTransform(x, z, h);
+            }
+        }
+
+        // Случайные кластеры разрушенных конструкций по карте
+        const clusterCount = 6; // количество кластеров
+        const ruinClusters = [];
+
+        for (let c = 0; c < clusterCount; c++) {
+            for (let attempt = 0; attempt < 200; attempt++) {
+                const angle = Math.random() * Math.PI * 2;
+                const r = 400 + Math.random() * 2500; // радиус от центра горы
+                const cx = Math.cos(angle) * r;
+                const cz = Math.sin(angle) * r;
+                const h = getActualTerrainHeight(cx, cz);
+
+                // Не ставим слишком высоко (скалы) и слишком низко (у подножия)
+                if (h < 200 || h > 1000) continue;
+
+                // Не ставим на дорогу
+                const normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+                const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+                const roadR = roadRadii[idx];
+                if (Math.abs(r - roadR) < 60) continue;
+
+                // Кластер найден — генерируем обломки                
+                const ruinsBefore = placedRuins;
+                addRuinCluster(cx, cz, 30 + Math.floor(Math.random() * 25));
+                if (placedRuins > ruinsBefore) {
+                    ruinClusters.push({ x: cx, z: cz });
+                }
+                break;
+            }
+        }
+
+        // Случайный разброс по карте (только ниже 1400 м, не на скалах)
+        for (let i = 0; i < 8000 && placedRuins < ruinCount; i++) {
+            const x = (Math.random() - 0.5) * 4200 * WORLD_SCALE;
+            const z = (Math.random() - 0.5) * 4200 * WORLD_SCALE;
+            const h = getActualTerrainHeight(x, z);
+            if (h > 1400) continue;
+
+            const angle = Math.atan2(z, x);
+            let normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+            const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+            const roadR = roadRadii[idx];
+            const distToRoad = Math.abs(Math.sqrt(x * x + z * z) - roadR);
+            if (distToRoad < 35) continue;
+
+            if (Math.sqrt((x - mineX) ** 2 + (z - mineZ) ** 2) < 25) continue;
+
+            applyRuinTransform(x, z, h);
+        }
+
+        scene.add(ruins);
+
+        // --- 5.8. Зоны повышенной радиации (невидимые) ---
+        const radZones = [];
+
+        function createRadZone(x, z, radius) {
+            // Никакого меша не создаём, только храним данные для проверки дистанции
+            radZones.push({ x, z, radius });
+        }
+
+        // Зона радиации у главной штольни 31 — оставляем без изменений.
+        // Она нужна как ориентир, но служит не для поиска, а просто для атмосферы.
+        createRadZone(mineX + 10, mineZ + 6, 45);
+
+        // Три боковые штольни — значительно увеличенные зоны радиации.
+        // Именно по ним игрок находит штольни: счётчик Гейгера начинает трещать
+        // задолго до подхода, и частота щелчков резко растёт при приближении.
+        // aditPositions[0] — это главная штольня 31, поэтому начинаем с индекса 1.
+        const SIDE_ADIT_RAD_ZONE_RADIUS = 250; // было 40
+        for (let i = 1; i < aditPositions.length; i++) {
+            const m = aditPositions[i];
+            createRadZone(m.x + 8, m.z + 5, SIDE_ADIT_RAD_ZONE_RADIUS);
+        }
+
+        // Радиоактивные зоны на кластерах бетонных руин — оставляем без изменений.
+        for (const cluster of ruinClusters) {
+            createRadZone(cluster.x, cluster.z, 100 + Math.random() * 25);
+        }
+
+        // Случайные зоны по карте — количество уменьшено с 8 до 2,
+        // чтобы они не сбивали игрока при поиске штолен по счётчику Гейгера.
+        for (let i = 0; i < 2; i++) {
+            for (let attempt = 0; attempt < 60; attempt++) {
+                const x = (Math.random() - 0.5) * 4000 * WORLD_SCALE;
+                const z = (Math.random() - 0.5) * 4000 * WORLD_SCALE;
+                const h = getActualTerrainHeight(x, z);
+                if (h > 1300 || h < 100) continue;
+
+                const angle = Math.atan2(z, x);
+                let normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+                const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+                const roadR = roadRadii[idx];
+                if (Math.abs(Math.sqrt(x * x + z * z) - roadR) < 35) continue;
+
+                // Не слишком близко к другим зонам
+                let tooClose = false;
+                for (const rz of radZones) {
+                    if (Math.sqrt((x - rz.x) ** 2 + (z - rz.z) ** 2) < 100) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+
+                createRadZone(x, z, 25 + Math.random() * 35); // Радиус от 25 до 60
+                break;
+            }
+        }
+
+        // --- 6. Лес ---
+        const treeGeo = new THREE.ConeGeometry(10, 30, 5);
+        const treeMat = new THREE.MeshStandardMaterial({ color: 0x013220 });
+        const trunkGeo = new THREE.CylinderGeometry(2, 2, 10, 4);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3E2723 });
+
+        const treeCount = 9000;
+        const trees = new THREE.InstancedMesh(treeGeo, treeMat, treeCount);
+        const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
+
+        const dummy = new THREE.Object3D();
+        let placedTrees = 0;
+
+        for (let i = 0; i < 34000; i++) {
+            if (placedTrees >= treeCount) break;
+
+            const x = (Math.random() - 0.5) * 3500 * WORLD_SCALE;
+            const z = (Math.random() - 0.5) * 3500 * WORLD_SCALE;
+
+            const h = getActualTerrainHeight(x, z);
+
+            const angle = Math.atan2(z, x);
+            let normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+            const idx = Math.floor((normAngle / (Math.PI * 2)) * numRoadPoints) % numRoadPoints;
+            const roadR = roadRadii[idx];
+            const distToCenter = Math.sqrt(x*x + z*z);
+
+            const onRoadOrLedge = Math.abs(distToCenter - roadR) < (roadWidth / 2 + 10);
+
+            let nearMine = false;
+            for (const pos of aditPositions) {
+                const dx = x - pos.x;
+                const dz = z - pos.z;
+                if (Math.sqrt(dx*dx + dz*dz) < 30) {
+                    nearMine = true;
+                    break;
+                }
+            }
+
+            if (h > 230 && h < 1000 * WORLD_SCALE && !onRoadOrLedge && !nearMine) {
+                dummy.position.set(x, h + 15, z);
+                dummy.rotation.y = Math.random() * Math.PI;
+                dummy.scale.setScalar(Math.random() * 0.5 + 0.8);
+                dummy.updateMatrix();
+                trees.setMatrixAt(placedTrees, dummy.matrix);
+
+                dummy.position.set(x, h + 5, z);
+                dummy.updateMatrix();
+                trunks.setMatrixAt(placedTrees, dummy.matrix);
+
+                placedTrees++;
+            }
+        }
+        trees.castShadow = true;
+        trees.receiveShadow = true;
+        trunks.castShadow = true;
+        scene.add(trees);
+        scene.add(trunks);
+
+        // --- 6.5. Высотный туман на склонах (height fog) ---
+        const hfParams = {
+            mid: 600 * WORLD_SCALE + 300,
+            range: 550 * WORLD_SCALE,
+            strength: 0.85
+        };
+
+        function applyHeightFog(material) {
+            material.onBeforeCompile = (shader) => {
+                shader.uniforms.uFogMid      = { value: hfParams.mid };
+                shader.uniforms.uFogRange    = { value: hfParams.range };
+                shader.uniforms.uFogStrength = { value: hfParams.strength };
+                shader.uniforms.uHFogColor   = { value: scene.fog.color };
+
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <common>',
+                    '#include <common>\nvarying float vWorldY;'
+                );
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+            vWorldY = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).y;
+        #else
+            vWorldY = (modelMatrix * vec4(transformed, 1.0)).y;
+        #endif`
+                );
+
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <common>',
+                    `#include <common>
+        varying float vWorldY;
+        uniform float uFogMid;
+        uniform float uFogRange;
+        uniform float uFogStrength;
+        uniform vec3  uHFogColor;`
+                );
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <fog_fragment>',
+                    `#include <fog_fragment>
+        {
+            float hfDist = abs(vWorldY - uFogMid);
+            float hf = 1.0 - smoothstep(0.0, uFogRange, hfDist);
+            hf *= hf;
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, uHFogColor, hf * uFogStrength);
+        }`
+                );
+            };
+            material.needsUpdate = true;
+        }
+
+        applyHeightFog(terrainMaterial);
+        applyHeightFog(roadMat);
+        applyHeightFog(treeMat);
+        applyHeightFog(trunkMat);
+        applyHeightFog(concreteMat);
+        applyHeightFog(rustyDoorMat);
+
+        // --- 6.6. Дрейфующие клубы тумана ---
+        const fogCloudTex = createCanvasTexture((ctx, w, h) => {
+            const g = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w/2);
+            g.addColorStop(0.0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.4, 'rgba(255,255,255,0.55)');
+            g.addColorStop(1.0, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, w, h);
+        }, 256, 256);
+
+        const fogClouds = [];
+        for (let i = 0; i < 50; i++) {
+            const mat = new THREE.SpriteMaterial({
+                map: fogCloudTex,
+                transparent: true,
+                opacity: 0.18 + Math.random() * 0.22,
+                depthWrite: false,
+                fog: false
+            });
+            const s = new THREE.Sprite(mat);
+            const angle  = Math.random() * Math.PI * 2;
+            const radius = (500 + Math.random() * 1700) * WORLD_SCALE;
+            const baseY  = (400 + Math.random() * 500)  * WORLD_SCALE;
+            s.position.set(Math.cos(angle) * radius, baseY, Math.sin(angle) * radius);
+            const sz = (350 + Math.random() * 450) * WORLD_SCALE;
+            s.scale.set(sz, sz * 0.55, 1);
+            s.userData = {
+                angle, radius, baseY,
+                speed: 0.01 + Math.random() * 0.02,
+                phase: Math.random() * Math.PI * 2
+            };
+            fogClouds.push(s);
+            scene.add(s);
+        }
+
+        // --- 7. Управление и звук ---
+        const controls = new THREE.PointerLockControls(camera, document.body);
+        const blocker = document.getElementById('blocker');
+
+        const linkRaycaster = new THREE.Raycaster();
+        const screenCenter = new THREE.Vector2(0, 0);
+        const crosshairEl = document.getElementById('crosshair');
+        const hintEl = document.getElementById('hint');
+
+        function isAimingAtSign() {
+            if (!controls.isLocked) return false;
+            linkRaycaster.setFromCamera(screenCenter, camera);
+            return linkRaycaster.intersectObjects([radHitbox, ...aditHitboxes], false).length > 0;
+        }
+
+        function updateAimFeedback() {
+            const aimed = isAimingAtSign();
+            if (aimed) {
+                crosshairEl.style.background = '#00FF00';
+                crosshairEl.style.width = '10px';
+                crosshairEl.style.height = '10px';
+                hintEl.style.display = 'block';
+            } else {
+                crosshairEl.style.background = 'white';
+                crosshairEl.style.width = '4px';
+                crosshairEl.style.height = '4px';
+                hintEl.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('mousedown', (event) => {
+            if (!controls.isLocked) return;
+            if (event.button !== 0) return;
+
+            linkRaycaster.setFromCamera(screenCenter, camera);
+            const hits = linkRaycaster.intersectObjects([radHitbox, ...aditHitboxes], false);
+            if (hits.length > 0) {
+                const obj = hits[0].object;
+                const url = obj.userData.url || MINE_PAGE_URL;
+                // Запоминаем точку входа — при возврате из рудника игрок окажется здесь же
+                saveReturnState(obj.userData.aditInfo || null);
+                window.location.href = url;
+            }
+        });
+
+        let audioCtx, windFilter, windGain;
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const bufferSize = audioCtx.sampleRate * 2;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+            const noiseSource = audioCtx.createBufferSource();
+            noiseSource.buffer = buffer;
+            noiseSource.loop = true;
+
+            windFilter = audioCtx.createBiquadFilter();
+            windFilter.type = 'lowpass';
+            windFilter.frequency.value = 400;
+
+            windGain = audioCtx.createGain();
+            windGain.gain.value = 0.03;
+
+            noiseSource.connect(windFilter);
+            windFilter.connect(windGain);
+            windGain.connect(audioCtx.destination);
+            noiseSource.start();
+
+            setInterval(() => {
+                if (audioCtx.state === 'suspended') return;
+                const now = audioCtx.currentTime;
+                windGain.gain.linearRampToValueAtTime(Math.random() * 0.06 + 0.02, now + 3);
+                windFilter.frequency.linearRampToValueAtTime(Math.random() * 400 + 150, now + 3);
+            }, 4000);
+        }
+
+        // --- Звук счётчика Гейгера ---
+        function playGeigerClick() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            // Резкий высокочастотный звук
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(2500 + Math.random() * 1500, audioCtx.currentTime);
+
+            // Очень быстрое затухание
+            gain.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.002);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.03);
+        }
+        // --- END/ Звук счётчика Гейгера ---
+
+        document.body.addEventListener('click', () => {
+            controls.lock();
+            initAudio();
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        });
+
+        controls.addEventListener('lock', () => blocker.style.display = 'none');
+        controls.addEventListener('unlock', () => blocker.style.display = 'flex');
+
+        // При восстановлении игрока после выхода из штольни сразу убираем блокирующее
+        // окно — игрок оказывается перед штольней без промежуточного экрана.
+        // Клик в любом месте снова захватит мышь (обработчик повешен на document.body),
+        // а клавиша Esc вернёт стандартный экран «Нажмите, чтобы начать».
+        if (returnState) {
+            blocker.style.display = 'none';
+        }
+
+        // --- 7.5. Позиционирование камеры: восстановление после выхода из штольни ---
+        if (returnState) {
+            // Возврат из рудника — ставим игрока ровно туда, где он входил
+            camera.position.set(returnState.px, returnState.py, returnState.pz);
+            if (isFinite(returnState.qx) && isFinite(returnState.qy) &&
+                isFinite(returnState.qz) && isFinite(returnState.qw)) {
+                camera.quaternion.set(returnState.qx, returnState.qy, returnState.qz, returnState.qw);
+            }
+            // Восстановление одноразовое: обычная перезагрузка вернёт точку старта
+            clearReturnState();
+        } else {
+            camera.position.set(0, getActualTerrainHeight(0, 3000 * WORLD_SCALE) + 2, 3000 * WORLD_SCALE);
+            camera.lookAt(0, getActualTerrainHeight(0, 0), 0);
+        }
+
+        const moveState = { forward: false, backward: false, left: false, right: false, jump: false, sprint: false };
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+
+        document.addEventListener('keydown', (e) => {
+            switch(e.code) {
+                case 'KeyW': moveState.forward = true; break;
+                case 'KeyS': moveState.backward = true; break;
+                case 'KeyA': moveState.left = true; break;
+                case 'KeyD': moveState.right = true; break;
+                case 'Space': moveState.jump = true; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': moveState.sprint = true; break;
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            switch(e.code) {
+                case 'KeyW': moveState.forward = false; break;
+                case 'KeyS': moveState.backward = false; break;
+                case 'KeyA': moveState.left = false; break;
+                case 'KeyD': moveState.right = false; break;
+                case 'Space': moveState.jump = false; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': moveState.sprint = false; break;
+            }
+        });
+
+        const raycaster = new THREE.Raycaster();
+        const downVector = new THREE.Vector3(0, -1, 0);
+        const playerHeight = 2.0;
+        const safetyMargin = 0.5;
+
+        let geigerTimer = 0;
+        const clock = new THREE.Clock();
+        const altitudeDisplay = document.getElementById('altitude');
+
+        const summitNotification = document.getElementById('summitNotification');
+        let summitReached = false;
+
+        // --- 8. Анимация ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            updateAimFeedback();
+
+            if (controls.isLocked) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                velocity.y -= 9.8 * 10.0 * delta;
+
+                direction.z = Number(moveState.forward) - Number(moveState.backward);
+                direction.x = Number(moveState.right) - Number(moveState.left);
+                direction.normalize();
+
+                const speed = moveState.sprint ? 800.0 : 200.0;
+
+                if (moveState.forward || moveState.backward) velocity.z -= direction.z * speed * delta;
+                if (moveState.left || moveState.right) velocity.x -= direction.x * speed * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+                camera.position.y += velocity.y * delta;
+
+                const rayStartPosition = camera.position.clone();
+                rayStartPosition.y += 100;
+
+                raycaster.set(rayStartPosition, downVector);
+
+                const intersects = raycaster.intersectObjects([terrain, roadMesh, ...allMineGroups]);
+
+                let groundY = 20 * WORLD_SCALE;
+                if (intersects.length > 0) {
+                    groundY = intersects[0].point.y;
+                } else {
+                    groundY = getActualTerrainHeight(camera.position.x, camera.position.z);
+                }
+
+                if (camera.position.y < groundY + playerHeight + safetyMargin) {
+                    velocity.y = 0;
+                    camera.position.y = groundY + playerHeight + safetyMargin;
+                }
+
+                if (moveState.jump && camera.position.y <= groundY + playerHeight + safetyMargin + 0.1) {
+                    velocity.y = 50.0;
+                }
+
+                altitudeDisplay.innerText = Math.round(camera.position.y);
+
+                // --- Проверка достижения вершины ---
+                const horizDist = Math.sqrt(
+                    camera.position.x * camera.position.x +
+                    camera.position.z * camera.position.z
+                );
+                const onSummit = horizDist < 150 && camera.position.y > 2150;
+
+                if (onSummit && !summitReached) {
+                    summitReached = true;
+                    summitNotification.classList.add('show');
+                } else if (!onSummit && summitReached && camera.position.y < 2000) {
+                    // сошли с вершины (с запасом по высоте, чтобы не сбрасывалось при спуске на 2 м)
+                    summitReached = false;
+                    summitNotification.classList.remove('show');
+                }
+
+                const tNow = clock.elapsedTime;
+                fogClouds.forEach(s => {
+                    s.userData.angle += s.userData.speed * delta * 0.15;
+                    s.position.x = Math.cos(s.userData.angle) * s.userData.radius;
+                    s.position.z = Math.sin(s.userData.angle) * s.userData.radius;
+                    s.position.y = s.userData.baseY + Math.sin(tNow * 0.25 + s.userData.phase) * 25;
+                });
+
+                // --- Логика радиации ---
+                let closestDistToZone = Infinity;
+                
+                // Находим ближайшую зону (вычитая её радиус, чтобы считать дистанцию до края)
+                for (const rz of radZones) {
+                    const dx = camera.position.x - rz.x;
+                    const dz = camera.position.z - rz.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz) - rz.radius;
+                    if (dist < closestDistToZone) closestDistToZone = dist;
+                }
+
+                // Если мы близко к зоне (начинаем трещать за 150 метров до её границы)
+                if (closestDistToZone < 150) {
+                    // t = 1 (далеко), t = 0 (внутри зоны)
+                    const t = Math.max(0, closestDistToZone / 150); 
+                    
+                    // Интервал между щелчками: от 0.05 сек (очень часто) до 1.5 сек (редко)
+                    const baseInterval = 0.1 + t * 1.6; // 0.1с вблизи, 1.6с на пороге
+                    
+                    geigerTimer -= delta;
+                    if (geigerTimer <= 0) {
+                        playGeigerClick();
+                        // Добавляем случайность, чтобы треск был хаотичным, как у настоящего прибора
+                        geigerTimer = baseInterval * (0.6 + Math.random() * 0.8); 
+                    }
+                } else {
+                    geigerTimer = 0; // Сбрасываем таймер, если вышли из опасной зоны
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
