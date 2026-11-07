@@ -14,6 +14,7 @@
     position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
     transform: translate(-50%, -50%); border-radius: 50%;
     background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 6px rgba(160,255,170,0.8);
+    transition: background 0.15s, box-shadow 0.15s;
   }
   .panel {
     position: absolute; background: rgba(0, 0, 0, 0.55);
@@ -60,6 +61,14 @@
     opacity: 0; transition: opacity 0.25s;
   }
   #pickupHint.show { opacity: 1; }
+  #ladderHint {
+    position: absolute; left: 50%; bottom: 30%; transform: translateX(-50%);
+    background: rgba(60, 60, 20, 0.75); padding: 5px 14px; border-radius: 5px;
+    font-size: 12px; color: #e8e8a0; letter-spacing: 1px;
+    border: 1px solid rgba(220, 220, 100, 0.35);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  #ladderHint.show { opacity: 1; }
   .overlay {
     position: fixed; inset: 0; z-index: 20; display: flex;
     align-items: center; justify-content: center; flex-direction: column;
@@ -116,12 +125,13 @@
   </div>
   <div id="hint">Нажмите, чтобы продолжить</div>
   <div id="pickupHint">+1 руда</div>
+  <div id="ladderHint">W — вверх · S — вниз · A/D — сойти</div>
 </div>
 
 <div id="overlayStart" class="overlay">
   <h1>ШТОЛЬНЯ</h1>
-  <p>Горизонтальные выработки с бетонной крепью: длинные штреки, квершлаги, камеры и тупики. Рельсовые пути, вагонетки. Несколько горизонтов в глубину соединены вертикальными шахтами — смотрите под ноги.</p>
-  <p style="color:#8fc78f">Цель: пройти как можно глубже, собрать руду и не набрать смертельную дозу. Светящиеся зелёные вкрапления в крепи — урановые рудные тела.</p>
+  <p>Горизонтальные выработки с бетонной крепью: длинные штреки, квершлаги, камеры и тупики. Рельсовые пути и вагонетки. Несколько горизонтов соединены вертикальными шахтами — часть с лестницами, часть пустая.</p>
+  <p style="color:#8fc78f">На лестнице: <b>W</b> — вверх, <b>S</b> — вниз, <b>A/D</b> — сойти в сторону. Смертельная доза — 100%.</p>
   <div class="keys">
     <b>W A S D / стрелки</b> — движение &nbsp;·&nbsp; <b>Мышь</b> — осмотр &nbsp;·&nbsp; <b>Пробел</b> — прыжок &nbsp;·&nbsp; <b>Shift</b> — бег
   </div>
@@ -141,9 +151,6 @@
 (function () {
   "use strict";
 
-  /* ============================================================
-     Константы
-     ============================================================ */
   var WORLD_W = 96, WORLD_H = 72, WORLD_D = 96;
 
   var PLAYER_RADIUS = 0.32;
@@ -154,6 +161,7 @@
   var RUN_SPEED = 7.0;
   var GRAVITY = 20;
   var JUMP_VEL = 8.5;
+  var CLIMB_SPEED = 3.2;
   var DOSE_CRITICAL = 100;
   var DOSE_FACTOR = 0.0022;
   var RECOVER_RATE = 3.0;
@@ -161,13 +169,11 @@
   var ORE_PICKUP_RADIUS = 1.5;
   var ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
 
-  // Параметры выработок
   var TUNNEL_HEIGHT = 3;
   var MAIN_FLOOR_W = 2.8, MAIN_CEIL_W = 2.0;
   var BRANCH_FLOOR_W = 2.2, BRANCH_CEIL_W = 1.5;
   var SHAFT_SIZE = 2;
 
-  // Горизонты
   var NUM_LEVELS = 5;
   var LEVEL_SPACING = 12;
   var TOP_FLOOR_Y = 64;
@@ -176,9 +182,6 @@
   var CENTER_X = Math.floor(WORLD_W / 2);
   var CENTER_Z = Math.floor(WORLD_D / 2);
 
-  /* ============================================================
-     Three.js
-     ============================================================ */
   var canvas = document.getElementById("game");
   var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -205,38 +208,25 @@
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
-  /* ============================================================
-     Текстура бетона
-     ============================================================ */
   function makeConcreteTexture() {
     var size = 128;
     var cv = document.createElement("canvas");
     cv.width = cv.height = size;
     var ctx = cv.getContext("2d");
-
-    // База — серый бетон
     ctx.fillStyle = "#8a8781";
     ctx.fillRect(0, 0, size, size);
-
-    // Крупный шум
     for (var i = 0; i < 4200; i++) {
       var v = Math.random() * 46 - 23;
       var c = Math.round(120 + v);
       ctx.fillStyle = "rgba(" + c + "," + c + "," + (c - 6) + ",0.35)";
       ctx.fillRect(Math.random() * size, Math.random() * size, 1.2, 1.2);
     }
-
-    // Шов по краю плиты (тёмный)
     ctx.strokeStyle = "rgba(38,34,28,0.75)";
     ctx.lineWidth = 5;
     ctx.strokeRect(2.5, 2.5, size - 5, size - 5);
-
-    // Светлый скос внутри
     ctx.strokeStyle = "rgba(190,186,178,0.35)";
     ctx.lineWidth = 1.5;
     ctx.strokeRect(6, 6, size - 12, size - 12);
-
-    // Ржавые подтёки
     for (var k = 0; k < 5; k++) {
       var x0 = Math.random() * size;
       var wdt = 2 + Math.random() * 5;
@@ -247,15 +237,12 @@
       ctx.fillStyle = grad;
       ctx.fillRect(x0, 0, wdt, len);
     }
-
-    // Мелкие выбоины
     for (var p = 0; p < 22; p++) {
       ctx.fillStyle = "rgba(52,48,44,0.45)";
       ctx.beginPath();
       ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
-
     var tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 4;
@@ -264,17 +251,11 @@
 
   var concreteTex = makeConcreteTexture();
 
-  var stoneMat = new THREE.MeshLambertMaterial({
-    map: concreteTex, vertexColors: true, side: THREE.DoubleSide
-  });
-  var uranMat = new THREE.MeshLambertMaterial({
-    map: concreteTex, color: 0x9ec49a, emissive: 0x1e5c1e, emissiveIntensity: 0.85,
-    vertexColors: true, side: THREE.DoubleSide
-  });
-  var crystalMat = new THREE.MeshLambertMaterial({
-    color: 0x123a16, emissive: 0x59ff7d, emissiveIntensity: 1.0, vertexColors: true
-  });
+  var stoneMat = new THREE.MeshLambertMaterial({ map: concreteTex, vertexColors: true, side: THREE.DoubleSide });
+  var uranMat = new THREE.MeshLambertMaterial({ map: concreteTex, color: 0x9ec49a, emissive: 0x1e5c1e, emissiveIntensity: 0.85, vertexColors: true, side: THREE.DoubleSide });
+  var crystalMat = new THREE.MeshLambertMaterial({ color: 0x123a16, emissive: 0x59ff7d, emissiveIntensity: 1.0, vertexColors: true });
   var railMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  var ladderMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 
   function hash3(x, y, z, s) {
     var n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^
@@ -285,9 +266,6 @@
   }
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-  /* ============================================================
-     Сетка
-     ============================================================ */
   var grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
   var sources = [];
   var signRequests = [];
@@ -295,18 +273,23 @@
   var cartPlacements = [];
 
   function gIdx(x, y, z) { return x + WORLD_W * (y + WORLD_H * z); }
+
+  function isLadder(x, y, z) {
+    if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return false;
+    return grid[gIdx(x, y, z)] === 3;
+  }
+
   function solidAt(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return true;
-    return grid[gIdx(x, y, z)] !== 0;
+    var v = grid[gIdx(x, y, z)];
+    return v === 1 || v === 2;
   }
+
   function setAir(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return;
     grid[gIdx(x, y, z)] = 0;
   }
 
-  /* ============================================================
-     Трапециевидные выработки
-     ============================================================ */
   function carveTrapezoidX(x0, x1, zc, yFloor, floorW, ceilW, height) {
     var xMin = Math.floor(Math.min(x0, x1)), xMax = Math.ceil(Math.max(x0, x1));
     for (var x = xMin; x <= xMax; x++) {
@@ -356,21 +339,27 @@
     var x0 = cx - Math.floor(w / 2), x1 = x0 + w - 1;
     var z0 = cz - Math.floor(d / 2), z1 = z0 + d - 1;
     carveBoxAir(x0, yFloor, z0, x1, yFloor + h - 1, z1);
-    // Слегка скругляем углы (скашиваем верхние углы)
     for (var hh = Math.floor(h / 2); hh < h; hh++) {
       var y = yFloor + hh;
       setAir(x0, y, z0); setAir(x1, y, z0);
       setAir(x0, y, z1); setAir(x1, y, z1);
     }
   }
-  function carveShaft(cx, cz, yTop, yBot, size) {
+
+  function carveShaft(cx, cz, yTop, yBot, size, withLadder) {
     var half = Math.floor(size / 2);
     carveBoxAir(cx - half, yBot, cz - half, cx + half, yTop, cz + half);
+    if (withLadder) {
+      for (var y = yBot; y <= yTop; y++) {
+        for (var x = cx - half; x <= cx + half; x++) {
+          for (var z = cz - half; z <= cz + half; z++) {
+            if (grid[gIdx(x, y, z)] === 0) grid[gIdx(x, y, z)] = 3;
+          }
+        }
+      }
+    }
   }
 
-  /* ============================================================
-     Рудные тела
-     ============================================================ */
   function placeUranium(x, y, z, depthMeters) {
     var ang = Math.random() * Math.PI * 2;
     var ccx = x + Math.cos(ang) * 2.4;
@@ -403,14 +392,13 @@
     if (x < 0 || x >= WORLD_W || z < 0 || z >= WORLD_D) return -1;
     var y0 = Math.min(WORLD_H - 2, fromY);
     for (var y = y0; y >= 2; y--) {
-      if (grid[gIdx(x, y, z)] === 0 && grid[gIdx(x, y - 1, z)] !== 0) return y;
+      var above = grid[gIdx(x, y, z)];
+      var below = grid[gIdx(x, y - 1, z)];
+      if (above === 0 && (below === 1 || below === 2)) return y;
     }
     return -1;
   }
 
-  /* ============================================================
-     Рельсы
-     ============================================================ */
   function addRails(x0, z0, x1, z1, yFloor) {
     var isX = Math.abs(x1 - x0) > Math.abs(z1 - z0);
     if (isX) {
@@ -438,32 +426,22 @@
     }
   }
 
-  /* ============================================================
-     Генерация штольни
-     ============================================================ */
   function addDeadEnd(yFloor, cx, cz) {
     var len = 5 + Math.floor(Math.random() * 6);
     var dir = Math.random() < 0.5 ? -1 : 1;
     var onX = Math.random() < 0.5;
-
     if (onX) {
       var x = 24 + Math.floor(Math.random() * (WORLD_W - 48));
       var z1 = clamp(cz + dir * len, 4, WORLD_D - 4);
       carveTrapezoidZ(cz, z1, x, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
       placeUranium(x, yFloor + 1, z1, ENTRANCE_Y - yFloor);
-      signRequests.push({
-        x: x, y: yFloor + 2, z: cz + dir * 2,
-        text: "Забой", faceX: 0, faceZ: -dir
-      });
+      signRequests.push({ x: x, y: yFloor + 2, z: cz + dir * 2, text: "Забой", faceX: 0, faceZ: -dir });
     } else {
       var z = 24 + Math.floor(Math.random() * (WORLD_D - 48));
       var x1 = clamp(cx + dir * len, 4, WORLD_W - 4);
       carveTrapezoidX(cx, x1, z, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
       placeUranium(x1, yFloor + 1, z, ENTRANCE_Y - yFloor);
-      signRequests.push({
-        x: cx + dir * 2, y: yFloor + 2, z: z,
-        text: "Забой", faceX: -dir, faceZ: 0
-      });
+      signRequests.push({ x: cx + dir * 2, y: yFloor + 2, z: z, text: "Забой", faceX: -dir, faceZ: 0 });
     }
   }
 
@@ -472,7 +450,6 @@
                  "Медпункт", "Склад ГСМ", "Компрессорная", "Венткамера",
                  "Камера ожидания", "Зарядная камера", "Ремонтный участок"];
     var name = names[(Math.random() * names.length) | 0];
-
     var onX = Math.random() < 0.5;
     var rcx, rcz, w, d, h = 4;
     if (onX) {
@@ -491,13 +468,11 @@
       carveTrapezoidX(cx, rcx, rcz, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
     }
     signRequests.push({
-      x: rcx, y: yFloor + 2, z: rcz,
-      text: name,
+      x: rcx, y: yFloor + 2, z: rcz, text: name,
       faceX: onX ? 0 : (rcx > cx ? 1 : -1),
       faceZ: onX ? (rcz > cz ? 1 : -1) : 0
     });
     if (Math.random() < 0.55) {
-      // Рудное тело в стене камеры
       var wx = rcx + (Math.random() < 0.5 ? -1 : 1) * (Math.floor(w / 2) + 1);
       var wz = rcz + (Math.random() < 0.5 ? -1 : 1) * (Math.floor(d / 2) + 1);
       placeUranium(wx, yFloor + 1, wz, ENTRANCE_Y - yFloor);
@@ -506,21 +481,17 @@
 
   function carveLevel(li, yFloor) {
     var th = TUNNEL_HEIGHT;
-
-    // Основные штреки
     var xA = 10, xB = WORLD_W - 10;
     var zA = 10, zB = WORLD_D - 10;
     var pA = 24, pB = WORLD_W - 24, pC = WORLD_D - 24;
-
     var drifts = [
       { t: 'X', x0: xA, x1: xB, zc: CENTER_Z },
       { t: 'Z', z0: zA, z1: zB, xc: CENTER_X },
-      { t: 'X', x0: pA, x1: pB, zc: pA },           // юг
-      { t: 'X', x0: pA, x1: pB, zc: pC },           // север
-      { t: 'Z', z0: pA, z1: pC, xc: pA },           // запад
-      { t: 'Z', z0: pA, z1: pC, xc: pB }            // восток
+      { t: 'X', x0: pA, x1: pB, zc: pA },
+      { t: 'X', x0: pA, x1: pB, zc: pC },
+      { t: 'Z', z0: pA, z1: pC, xc: pA },
+      { t: 'Z', z0: pA, z1: pC, xc: pB }
     ];
-
     for (var i = 0; i < drifts.length; i++) {
       var dr = drifts[i];
       if (dr.t === 'X') {
@@ -531,39 +502,22 @@
         addRails(dr.xc, dr.z0, dr.xc, dr.z1, yFloor);
       }
     }
-
-    // Перекрёстки (закругляем места слияния)
     var junctions = [
-      [CENTER_X, CENTER_Z],
-      [pA, pA], [pB, pA], [pA, pC], [pB, pC],
-      [CENTER_X, pA], [CENTER_X, pC],
-      [pA, CENTER_Z], [pB, CENTER_Z]
+      [CENTER_X, CENTER_Z], [pA, pA], [pB, pA], [pA, pC], [pB, pC],
+      [CENTER_X, pA], [CENTER_X, pC], [pA, CENTER_Z], [pB, CENTER_Z]
     ];
     for (var j = 0; j < junctions.length; j++) {
       carveJunction(junctions[j][0], yFloor, junctions[j][1], MAIN_FLOOR_W, th);
     }
-
-    // Камеры и тупики
     var roomsCount = 3 + Math.floor(Math.random() * 3);
     for (var r = 0; r < roomsCount; r++) addRoom(yFloor, CENTER_X, CENTER_Z);
-
     var deadCount = 3 + Math.floor(Math.random() * 3);
     for (var d = 0; d < deadCount; d++) addDeadEnd(yFloor, CENTER_X, CENTER_Z);
-
-    // Пара рудных вкраплений на перекрёстках (для атмосферы)
     if (Math.random() < 0.7) {
       var jp = junctions[(Math.random() * junctions.length) | 0];
       placeUranium(jp[0] + (Math.random() - 0.5) * 4, yFloor + 1, jp[1] + (Math.random() - 0.5) * 4, ENTRANCE_Y - yFloor);
     }
-
-    // Табличка горизонта
-    signRequests.push({
-      x: CENTER_X + 2, y: yFloor + 2, z: CENTER_Z,
-      text: "Горизонт " + (-li * LEVEL_SPACING) + " м",
-      faceX: 1, faceZ: 0
-    });
-
-    // Вагонетки на рельсах
+    signRequests.push({ x: CENTER_X + 2, y: yFloor + 2, z: CENTER_Z, text: "Горизонт " + (-li * LEVEL_SPACING) + " м", faceX: 1, faceZ: 0 });
     var cartCount = 2 + Math.floor(Math.random() * 3);
     for (var c = 0; c < cartCount; c++) {
       if (Math.random() < 0.5) {
@@ -584,16 +538,10 @@
     cartPlacements.length = 0;
 
     var levels = [];
-    for (var li = 0; li < NUM_LEVELS; li++) {
-      levels.push(TOP_FLOOR_Y - li * LEVEL_SPACING);
-    }
+    for (var li = 0; li < NUM_LEVELS; li++) levels.push(TOP_FLOOR_Y - li * LEVEL_SPACING);
 
-    // Выработки по горизонтам
-    for (var lv = 0; lv < NUM_LEVELS; lv++) {
-      carveLevel(lv, levels[lv]);
-    }
+    for (var lv = 0; lv < NUM_LEVELS; lv++) carveLevel(lv, levels[lv]);
 
-    // Вертикальные шахты между горизонтами
     for (var s = 0; s < NUM_LEVELS - 1; s++) {
       var yTop = levels[s];
       var yBot = levels[s + 1];
@@ -603,30 +551,25 @@
         if (Math.random() < 0.5) {
           sx = 26 + Math.floor(Math.random() * (WORLD_W - 52));
           sz = CENTER_Z;
+          if (Math.abs(sx - CENTER_X) < 5) sx += 8;
         } else {
           sx = CENTER_X;
           sz = 26 + Math.floor(Math.random() * (WORLD_D - 52));
+          if (Math.abs(sz - CENTER_Z) < 5) sz += 8;
         }
-        carveShaft(sx, sz, yTop, yBot, SHAFT_SIZE);
+        var hasLadder = (k === 0) || (Math.random() < 0.4);
+        carveShaft(sx, sz, yTop, yBot, SHAFT_SIZE, hasLadder);
         signRequests.push({
           x: sx, y: yTop + 2, z: sz,
-          text: "Шахта " + (s + 1) + " — вниз",
+          text: hasLadder ? ("Шахта " + (s + 1) + " — лестница") : ("Шахта " + (s + 1) + " — ОСТОРОЖНО"),
           faceX: 1, faceZ: 0
         });
-        // Мягкий подсвет снизу (псевдо-свет от следующего горизонта)
-        // добавляем руду у основания шахты
-        if (Math.random() < 0.6) {
-          placeUranium(sx + 2, yBot + 1, sz, ENTRANCE_Y - yBot);
-        }
+        if (Math.random() < 0.6) placeUranium(sx + 2, yBot + 1, sz, ENTRANCE_Y - yBot);
       }
     }
-
     return { x: CENTER_X, y: levels[0], z: CENTER_Z, yaw: Math.PI * 0.25 };
   }
 
-  /* ============================================================
-     Геометрия блоков
-     ============================================================ */
   var FACES = [
     { n: [ 1, 0, 0], c: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
     { n: [-1, 0, 0], c: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
@@ -637,12 +580,8 @@
   ];
   var FACE_UV = [[0,0],[0,1],[1,1],[1,0]];
 
-  var CRY_VERTS = [
-    [0,1,0],[0,-0.6,0],[0.45,0.12,0],[0,0.12,0.45],[-0.45,0.12,0],[0,0.12,-0.45]
-  ];
-  var CRY_FACES = [
-    [0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]
-  ];
+  var CRY_VERTS = [[0,1,0],[0,-0.6,0],[0.45,0.12,0],[0,0.12,0.45],[-0.45,0.12,0],[0,0.12,-0.45]];
+  var CRY_FACES = [[0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]];
 
   function pushCrystal(cx, cy, cz, nx, ny, nz, r, h, twist, posArr, norArr, colArr, idxArr, shade) {
     var ux = nx, uy = ny, uz = nz;
@@ -677,7 +616,7 @@
     }
   }
 
-  var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null;
+  var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null, ladderMesh = null;
 
   function buildGeometry() {
     var sp=[], sn=[], su=[], si=[], sc=[];
@@ -704,20 +643,15 @@
 
     for (var z = 0; z < WORLD_D; z++) for (var y = 0; y < WORLD_H; y++) for (var x = 0; x < WORLD_W; x++) {
       var v = grid[gIdx(x,y,z)];
-      if (v === 0) continue;
+      if (v === 0 || v === 3) continue;
       var shade = 0.68 + hash3(x,y,z,7)*0.4;
       for (var f = 0; f < 6; f++) {
         var face = FACES[f];
         var nx = x+face.n[0], ny = y+face.n[1], nz = z+face.n[2];
         if (solidAt(nx,ny,nz)) continue;
-
         var tr = 1, tg = 1, tb = 1;
-        if (face.n[1] === 1) {          // пол (верхняя грань)
-          tr = 0.66; tg = 0.62; tb = 0.56;
-        } else if (face.n[1] === -1) {  // потолок
-          tr = 0.86; tg = 0.86; tb = 0.86;
-        }
-
+        if (face.n[1] === 1) { tr = 0.66; tg = 0.62; tb = 0.56; }
+        else if (face.n[1] === -1) { tr = 0.86; tg = 0.86; tb = 0.86; }
         if (v === 1) {
           pushFace(x,y,z,face,sp,sn,su,si,sc,shade,tr,tg,tb);
         } else {
@@ -768,9 +702,6 @@
     crystalMesh = new THREE.Mesh(makeGeo(cp,cn,null,cc,ci), crystalMat); crystalMesh.frustumCulled = false; scene.add(crystalMesh);
   }
 
-  /* ============================================================
-     Рельсовая геометрия
-     ============================================================ */
   function buildRailGeometry() {
     var pos = [], nor = [], col = [], idx = [];
     function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
@@ -802,9 +733,84 @@
     scene.add(railMesh);
   }
 
-  /* ============================================================
-     Таблички
-     ============================================================ */
+  function buildLadderGeometry() {
+    var pos = [], nor = [], col = [], idx = [];
+
+    function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
+      for (var f = 0; f < 6; f++) {
+        var face = FACES[f];
+        var base = pos.length / 3;
+        for (var k = 0; k < 4; k++) {
+          var c = face.c[k];
+          pos.push(cx + (c[0]-0.5)*sx, cy + (c[1]-0.5)*sy, cz + (c[2]-0.5)*sz);
+          nor.push(face.n[0], face.n[1], face.n[2]);
+          col.push(r, g, b);
+        }
+        idx.push(base, base+1, base+2, base, base+2, base+3);
+      }
+    }
+
+    for (var y = 0; y < WORLD_H; y++) {
+      for (var z = 0; z < WORLD_D; z++) {
+        for (var x = 0; x < WORLD_W; x++) {
+          if (grid[gIdx(x, y, z)] !== 3) continue;
+          var drawn = false;
+          var railR = 0.55, railG = 0.40, railB = 0.22;
+          var rungR = 0.72, rungG = 0.58, rungB = 0.32;
+          if (solidAt(x - 1, y, z)) {
+            var wx = x + 0.06;
+            addBox(wx, y + 0.5, z + 0.22, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(wx, y + 0.5, z + 0.78, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(wx + 0.01, y + 0.28, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            addBox(wx + 0.01, y + 0.72, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (solidAt(x + 1, y, z)) {
+            var ex = x + 0.94;
+            addBox(ex, y + 0.5, z + 0.22, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(ex, y + 0.5, z + 0.78, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(ex - 0.01, y + 0.28, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            addBox(ex - 0.01, y + 0.72, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn && solidAt(x, y, z - 1)) {
+            var sz = z + 0.06;
+            addBox(x + 0.22, y + 0.5, sz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.78, y + 0.5, sz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, sz + 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, sz + 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn && solidAt(x, y, z + 1)) {
+            var nz = z + 0.94;
+            addBox(x + 0.22, y + 0.5, nz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.78, y + 0.5, nz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, nz - 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, nz - 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn) {
+            addBox(x + 0.30, y + 0.5, z + 0.5, 0.05, 1.0, 0.05, railR, railG, railB);
+            addBox(x + 0.70, y + 0.5, z + 0.5, 0.05, 1.0, 0.05, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, z + 0.5, 0.42, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, z + 0.5, 0.42, 0.05, 0.05, rungR, rungG, rungB);
+          }
+        }
+      }
+    }
+
+    if (ladderMesh) { scene.remove(ladderMesh); ladderMesh.geometry.dispose(); }
+    if (pos.length === 0) { ladderMesh = null; return; }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(new THREE.Uint32BufferAttribute(idx, 1));
+    ladderMesh = new THREE.Mesh(geo, ladderMat);
+    ladderMesh.frustumCulled = false;
+    scene.add(ladderMesh);
+  }
+
   var signGroup = null;
   var signTextures = {};
   var SIGN_W = 1.5, SIGN_H = 0.4;
@@ -819,8 +825,7 @@
     var ctx = cv.getContext("2d");
     ctx.fillStyle = "#2a2c25"; ctx.fillRect(0, 0, w, h);
     for (var i = 0; i < 44; i++) {
-      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," +
-        (0.03+Math.random()*0.09).toFixed(3) + ")";
+      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," + (0.03+Math.random()*0.09).toFixed(3) + ")";
       ctx.beginPath();
       ctx.arc(Math.random()*w, Math.random()*h, 5+Math.random()*34, 0, Math.PI*2);
       ctx.fill();
@@ -863,7 +868,6 @@
     }
     var yTries = [Math.round(y), Math.round(y)+1, Math.round(y)-1, Math.round(y)+2];
     var halfW = Math.ceil(SIGN_W / 2);
-
     for (var yi = 0; yi < yTries.length; yi++) {
       var yTry = yTries[yi];
       if (yTry < 2 || yTry >= WORLD_H - 2) continue;
@@ -904,9 +908,6 @@
     return false;
   }
 
-  /* ============================================================
-     Вагонетки
-     ============================================================ */
   var cartGroup = null;
 
   function makeCart(ore, mats) {
@@ -940,9 +941,6 @@
     return g;
   }
 
-  /* ============================================================
-     Рудные кристаллы-подбиралки
-     ============================================================ */
   var oreGroup = null;
   var oreItems = [];
   var oreCollected = 0;
@@ -954,15 +952,9 @@
     for (var i = 0; i < count; i++) {
       var size = 0.08 + Math.random() * 0.06;
       var geo = new THREE.OctahedronGeometry(size, 0);
-      var mat = new THREE.MeshLambertMaterial({
-        color: 0x0d2a12, emissive: 0x4cff66, emissiveIntensity: 1.4
-      });
+      var mat = new THREE.MeshLambertMaterial({ color: 0x0d2a12, emissive: 0x4cff66, emissiveIntensity: 1.4 });
       var m = new THREE.Mesh(geo, mat);
-      m.position.set(
-        (Math.random()-0.5) * 0.28,
-        0.1 + Math.random() * 0.22,
-        (Math.random()-0.5) * 0.28
-      );
+      m.position.set((Math.random()-0.5) * 0.28, 0.1 + Math.random() * 0.22, (Math.random()-0.5) * 0.28);
       m.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
       g.add(m);
     }
@@ -977,7 +969,6 @@
     oreGroup = new THREE.Group();
     oreItems.length = 0;
     oreCollected = 0;
-
     for (var i = 0; i < sources.length; i++) {
       if (oreItems.length >= 90) break;
       var s = sources[i];
@@ -993,7 +984,6 @@
         var fy = findFloorY(xi, zi, Math.round(s.y) + 4);
         if (fy < 2) continue;
         if (solidAt(xi, fy, zi) || solidAt(xi, fy + 1, zi)) continue;
-
         var mesh = createOrePickupMesh();
         mesh.position.set(xi + 0.5, fy + 0.05, zi + 0.5);
         oreGroup.add(mesh);
@@ -1019,9 +1009,6 @@
     pickupHintTimer = 0.9;
   }
 
-  /* ============================================================
-     Декор: таблички + вагонетки
-     ============================================================ */
   function buildDecor() {
     if (signGroup) scene.remove(signGroup);
     signGroup = new THREE.Group();
@@ -1050,38 +1037,26 @@
     scene.add(cartGroup);
   }
 
-  /* ============================================================
-     Кликабельная панель "Выход на поверхность"
-     ============================================================ */
   var SURFACE_URL = "../index.html";
-
   var startPos = null;
 
   function buildCeilingExit() {
     var geom = new THREE.PlaneGeometry(5, 5);
-    var mat = new THREE.MeshBasicMaterial({
-      color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide
-    });
+    var mat = new THREE.MeshBasicMaterial({ color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
     var mesh = new THREE.Mesh(geom, mat);
     mesh.rotation.x = Math.PI / 2;
-    // На потолке уровня 0 над центром
     mesh.position.set(CENTER_X + 0.5, TOP_FLOOR_Y + TUNNEL_HEIGHT - 0.1, CENTER_Z + 0.5);
     mesh.name = "ceilingExit";
     scene.add(mesh);
-
     var glow = new THREE.PointLight(0xd8ffd8, 1.4, 12);
     glow.position.set(mesh.position.x, mesh.position.y - 0.5, mesh.position.z);
     scene.add(glow);
-
     return mesh;
   }
 
-  /* ============================================================
-     Игрок
-     ============================================================ */
   var PLAYER = {
     pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-    yaw: 0, pitch: 0, onGround: false, dose: 0, maxDepth: 0
+    yaw: 0, pitch: 0, onGround: false, onLadder: false, dose: 0, maxDepth: 0
   };
   var keys = {};
   var gameState = "menu";
@@ -1108,9 +1083,6 @@
     if (gameState === "playing" && document.pointerLockElement !== canvas) canvas.requestPointerLock();
   });
 
-  /* ============================================================
-     Audio
-     ============================================================ */
   var audioCtx = null, clickBuf = null, clickTimer = 0, clickInterval = 1.2, humNodes = null;
 
   function startHum() {
@@ -1120,7 +1092,6 @@
     master.gain.setValueAtTime(0.0001, now);
     master.gain.exponentialRampToValueAtTime(0.055, now + 4);
     master.connect(audioCtx.destination);
-
     var g1 = audioCtx.createGain(); g1.gain.value = 0.55; g1.connect(master);
     var osc1 = audioCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 52;
     var osc2 = audioCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 52.7;
@@ -1130,21 +1101,17 @@
       osc1.connect(pL); pL.connect(g1);
       osc2.connect(pR); pR.connect(g1);
     } else { osc1.connect(g1); osc2.connect(g1); }
-
     var osc4 = audioCtx.createOscillator(); osc4.type = "sine"; osc4.frequency.value = 33;
     var g4 = audioCtx.createGain(); g4.gain.value = 0.2;
     osc4.connect(g4); g4.connect(master);
-
     var lp = audioCtx.createBiquadFilter();
     lp.type = "lowpass"; lp.frequency.value = 240; lp.Q.value = 1.4; lp.connect(master);
     var osc3 = audioCtx.createOscillator(); osc3.type = "triangle"; osc3.frequency.value = 104;
     var g3 = audioCtx.createGain(); g3.gain.value = 0.22;
     osc3.connect(g3); g3.connect(lp);
-
     var lfo = audioCtx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.06;
     var lg = audioCtx.createGain(); lg.gain.value = 90;
     lfo.connect(lg); lg.connect(lp.frequency);
-
     var noiseLen = Math.floor(audioCtx.sampleRate * 4);
     var noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate);
     var nd = noiseBuf.getChannelData(0);
@@ -1157,7 +1124,6 @@
     var nf = audioCtx.createBiquadFilter(); nf.type = "lowpass"; nf.frequency.value = 150; nf.Q.value = 0.6;
     var ng = audioCtx.createGain(); ng.gain.value = 0.35;
     noise.connect(nf); nf.connect(ng); ng.connect(master);
-
     osc1.start(now); osc2.start(now); osc3.start(now); osc4.start(now); noise.start(now); lfo.start(now);
     humNodes = { master: master };
   }
@@ -1201,9 +1167,6 @@
     osc.start(now); osc.stop(now + 0.25);
   }
 
-  /* ============================================================
-     Мини-карта
-     ============================================================ */
   var MAP_R = 13, MAP_W = 190, TILE_W = 7, TILE_H = 3.6, H_SCALE = 2.8, SKIRT = 3.2;
   var mapCanvas = document.getElementById("minimap");
   var mapCtx = mapCanvas.getContext("2d");
@@ -1214,7 +1177,9 @@
     var y1 = Math.max(1, Math.floor(py - 18));
     var best = -1, bestD = 1e9;
     for (var y = y0; y >= y1; y--) {
-      if (grid[gIdx(x, y, z)] === 0 && grid[gIdx(x, y - 1, z)] !== 0) {
+      var above = grid[gIdx(x, y, z)];
+      var below = grid[gIdx(x, y - 1, z)];
+      if (above === 0 && (below === 1 || below === 2)) {
         var d = Math.abs(y + 0.5 - py);
         if (d < bestD) { bestD = d; best = y; }
       }
@@ -1300,9 +1265,6 @@
     mapCtx.strokeRect(0.5, 0.5, W - 1, H - 1);
   }
 
-  /* ============================================================
-     Игровой цикл
-     ============================================================ */
   function computeRadiation(px, py, pz) {
     var depthMeters = Math.max(0, ENTRANCE_Y - py);
     var level = 0.15 + depthMeters * 0.04;
@@ -1313,6 +1275,7 @@
     }
     return level;
   }
+
   function collides(px, py, pz) {
     var r = PLAYER_RADIUS;
     var x0 = Math.floor(px - r), x1 = Math.floor(px + r);
@@ -1323,6 +1286,7 @@
     }
     return false;
   }
+
   function tryMove(axis, dist) {
     var p = PLAYER.pos;
     if (axis === "y") {
@@ -1337,6 +1301,13 @@
     p[axis] += dist;
     if (!collides(p.x, p.y, p.z)) return;
     p[axis] -= dist;
+
+    // Пока игрок держится за лестницу — не пытаемся «перешагнуть» стену ствола.
+    if (PLAYER.onLadder) {
+      PLAYER.vel[axis] = 0;
+      return;
+    }
+
     var savedY = p.y;
     p.y += STEP_HEIGHT;
     p[axis] += dist;
@@ -1347,31 +1318,114 @@
     }
   }
 
+  function detectLadderInBox(p) {
+    var r = PLAYER_RADIUS;
+    var x0 = Math.floor(p.x - r + 0.01), x1 = Math.floor(p.x + r - 0.01);
+    var y0 = Math.floor(p.y + 0.1), y1 = Math.floor(p.y + PLAYER_HEIGHT - 0.1);
+    var z0 = Math.floor(p.z - r + 0.01), z1 = Math.floor(p.z + r - 0.01);
+    for (var y = y0; y <= y1; y++)
+      for (var x = x0; x <= x1; x++)
+        for (var z = z0; z <= z1; z++)
+          if (isLadder(x, y, z)) return true;
+    return false;
+  }
+
   function update(dt) {
     gameTime += dt;
     var p = PLAYER.pos;
     var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
     var rightX = Math.cos(PLAYER.yaw), rightZ = -Math.sin(PLAYER.yaw);
+
+    // Ввод
     var fwd = 0, strafe = 0;
     if (keys.KeyW || keys.ArrowUp) fwd += 1;
     if (keys.KeyS || keys.ArrowDown) fwd -= 1;
     if (keys.KeyD || keys.ArrowRight) strafe += 1;
     if (keys.KeyA || keys.ArrowLeft) strafe -= 1;
+
+    // Детект лестницы
+    var onLadderCell = detectLadderInBox(p);
+    if (PLAYER.onLadder) {
+      if (!onLadderCell) PLAYER.onLadder = false;
+    } else {
+      if (onLadderCell && PLAYER.vel.y < -0.3) {
+        PLAYER.onLadder = true;
+        PLAYER.vel.y = 0;
+      }
+    }
+
+    // Логика лазания
+    if (PLAYER.onLadder) {
+      var climbDir = 0;
+      if (keys.KeyW || keys.ArrowUp) climbDir += 1;
+      if (keys.KeyS || keys.ArrowDown) climbDir -= 1;
+
+      if (climbDir !== 0) {
+        var nextY = p.y + climbDir * CLIMB_SPEED * dt;
+        var nextFeetCell = Math.floor(nextY + 0.1);
+        var feetX = Math.floor(p.x);
+        var feetZ = Math.floor(p.z);
+        if (isLadder(feetX, nextFeetCell, feetZ)) {
+          PLAYER.vel.y = climbDir * CLIMB_SPEED;
+          // ВАЖНО: пока лезем — W/S не двигают горизонтально
+          fwd = 0;
+        } else {
+          PLAYER.vel.y = 0;
+          // Дошли до края лестницы — W/S теперь работают как ходьба,
+          // чтобы можно было сойти вбок или выйти в туннель.
+        }
+      } else {
+        PLAYER.vel.y = 0;
+      }
+    }
+
+    // Горизонтальная скорость
     var speed = (keys.ShiftLeft || keys.ShiftRight) ? RUN_SPEED : WALK_SPEED;
     if (fwd !== 0 || strafe !== 0) {
       var inv = 1 / Math.sqrt(fwd * fwd + strafe * strafe);
       fwd *= inv; strafe *= inv;
       PLAYER.vel.x = (fwdX * fwd + rightX * strafe) * speed;
       PLAYER.vel.z = (fwdZ * fwd + rightZ * strafe) * speed;
-    } else { PLAYER.vel.x = 0; PLAYER.vel.z = 0; }
-    if (keys.Space && PLAYER.onGround) { PLAYER.vel.y = JUMP_VEL; PLAYER.onGround = false; }
+    } else {
+      PLAYER.vel.x = 0;
+      PLAYER.vel.z = 0;
+    }
+
+    // Гравитация / прыжок
+    var wasOnGround = PLAYER.onGround;
     PLAYER.onGround = false;
-    PLAYER.vel.y -= GRAVITY * dt;
-    if (PLAYER.vel.y < -40) PLAYER.vel.y = -40;
+
+    if (!PLAYER.onLadder) {
+      if (keys.Space && wasOnGround) {
+        PLAYER.vel.y = JUMP_VEL;
+      } else {
+        PLAYER.vel.y -= GRAVITY * dt;
+        if (PLAYER.vel.y < -40) PLAYER.vel.y = -40;
+      }
+    }
+
     tryMove("x", PLAYER.vel.x * dt);
     tryMove("y", PLAYER.vel.y * dt);
     tryMove("z", PLAYER.vel.z * dt);
 
+    // Индикация
+    var ch = document.getElementById("crosshair");
+    if (ch) {
+      if (PLAYER.onLadder) {
+        ch.style.background = "#88ff88";
+        ch.style.boxShadow = "0 0 10px rgba(120,255,120,1)";
+      } else {
+        ch.style.background = "rgba(255,255,255,0.55)";
+        ch.style.boxShadow = "0 0 6px rgba(160,255,170,0.8)";
+      }
+    }
+    var lh = document.getElementById("ladderHint");
+    if (lh) {
+      if (PLAYER.onLadder) lh.classList.add("show");
+      else lh.classList.remove("show");
+    }
+
+    // Сбор руды
     for (var oi = 0; oi < oreItems.length; oi++) {
       var it = oreItems[oi];
       if (it.collected) continue;
@@ -1441,20 +1495,18 @@
     document.getElementById("depthMax").textContent = "Рекорд: " + PLAYER.maxDepth.toFixed(1) + " м";
   }
 
-  function resetGame(entrance) {    
+  function resetGame(entrance) {
     PLAYER.pos.set(entrance.x + 0.5, entrance.y + 0.1, entrance.z + 0.5);
-
-    // Страховка: если спавн оказался в стене — опускаемся ниже, пока не станет свободно
     var guard = 0;
     while (collides(PLAYER.pos.x, PLAYER.pos.y, PLAYER.pos.z) && guard < 60) {
       PLAYER.pos.y -= 0.05;
       guard++;
     }
-
     PLAYER.vel.set(0, 0, 0);
     PLAYER.yaw = entrance.yaw;
     PLAYER.pitch = -0.05;
     PLAYER.onGround = false;
+    PLAYER.onLadder = false;
     PLAYER.dose = 0;
     PLAYER.maxDepth = 0;
     clickTimer = 0;
@@ -1462,6 +1514,9 @@
     pickupHintTimer = 0;
     var ph = document.getElementById("pickupHint");
     if (ph) ph.classList.remove("show");
+    var lh = document.getElementById("ladderHint");
+    if (lh) lh.classList.remove("show");
+
     oreCollected = 0;
     for (var oi = 0; oi < oreItems.length; oi++) {
       oreItems[oi].collected = false;
@@ -1493,12 +1548,10 @@
   document.getElementById("btnStart").addEventListener("click", startGame);
   document.getElementById("btnRestart").addEventListener("click", startGame);
 
-  /* ============================================================
-     Запуск
-     ============================================================ */
   startPos = generateMine();
   buildGeometry();
   buildRailGeometry();
+  buildLadderGeometry();
   buildDecor();
   buildOrePickups();
 
