@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Урановые рудники — 3D симулятор</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050604; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; color: #d8d8c8; user-select: none; }
+
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+  #crosshair {
+    position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+    transform: translate(-50%, -50%); border-radius: 50%;
+    background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 6px rgba(160,255,170,0.8);
+  }
+
+  .panel {
+    position: absolute; background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(120, 160, 120, 0.35); border-radius: 8px; padding: 10px 14px;
+    backdrop-filter: blur(3px);
+  }
+
+  #radPanel { left: 16px; top: 16px; min-width: 200px; }
+  #radPanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
+  #radValue { font-size: 26px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  #radBarWrap { width: 100%; height: 8px; background: #1a1f1a; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  #radBar { height: 100%; width: 0%; background: linear-gradient(90deg, #55d455, #e0c040, #e05540); transition: width 0.1s linear; }
+
+  #dosePanel { right: 16px; top: 16px; width: 240px; }
+  #dosePanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
+  #doseValue { font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  #doseBarWrap { width: 100%; height: 16px; background: #1a1f1a; border-radius: 8px; margin-top: 8px; overflow: hidden; border: 1px solid #2c352c; }
+  #doseBar { height: 100%; width: 0%; background: linear-gradient(90deg, #2f6f2f, #c9a13a, #d23b2b); }
+  #doseBar.warn { animation: pulse 0.8s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  #depthPanel { left: 16px; bottom: 16px; min-width: 190px; }
+  #depthPanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
+  #depthValue { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #depthMax { font-size: 12px; color: #8f9a8f; margin-top: 4px; }
+  #oreValue {
+    font-size: 13px; color: #7fff8a; margin-top: 7px;
+    border-top: 1px solid rgba(120,160,120,0.25); padding-top: 6px;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.5px;
+  }
+
+  #mapPanel { right: 16px; bottom: 16px; padding: 8px 8px 7px; }
+  #mapPanel .label {
+    font-size: 10px; letter-spacing: 2px; color: #8f9a8f;
+    text-transform: uppercase; text-align: center; margin-bottom: 5px;
+  }
+  #minimap {
+    display: block; width: 190px; height: 190px; border-radius: 6px;
+    background: #060a07; border: 1px solid rgba(90,120,90,0.3);
+  }
+  #mapLegend {
+    display: flex; flex-wrap: wrap; justify-content: space-between;
+    margin-top: 5px; font-size: 8px; letter-spacing: 0.5px; color: #77857a;
+  }
+  #mapLegend span { white-space: nowrap; }
+  #mapLegend .sw {
+    display: inline-block; width: 7px; height: 7px; border-radius: 2px;
+    margin-right: 2px; vertical-align: middle;
+  }
+
+  #hint {
+    position: absolute; left: 50%; top: 60%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 6px;
+    font-size: 14px; color: #cfe8cf; display: none; letter-spacing: 1px;
+  }
+
+  #pickupHint {
+    position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%);
+    background: rgba(20, 60, 26, 0.75); padding: 6px 14px; border-radius: 6px;
+    font-size: 13px; color: #9fffab; letter-spacing: 1px;
+    border: 1px solid rgba(100, 255, 110, 0.4);
+    opacity: 0; transition: opacity 0.25s;
+  }
+  #pickupHint.show { opacity: 1; }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 20; display: flex;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(4, 6, 4, 0.82); backdrop-filter: blur(4px);
+    text-align: center;
+  }
+  .overlay.hidden { display: none; }
+
+  .overlay h1 {
+    font-size: 34px; letter-spacing: 6px; margin-bottom: 8px;
+    color: #cfe8cf; text-shadow: 0 0 18px rgba(120, 230, 130, 0.45);
+  }
+  .overlay h2 { font-size: 22px; margin-bottom: 16px; color: #e05540; letter-spacing: 3px; }
+  .overlay p { max-width: 580px; line-height: 1.6; color: #aab5aa; font-size: 14px; margin-bottom: 8px; }
+
+  .btn {
+    margin-top: 22px; padding: 14px 42px; font-size: 18px; letter-spacing: 3px;
+    background: #2f6f2f; color: #e8ffe8; border: 1px solid #55a055;
+    border-radius: 8px; cursor: pointer; transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover { background: #3d8a3d; transform: scale(1.03); }
+  .btn:active { transform: scale(0.98); }
+
+  .keys { margin-top: 18px; font-size: 13px; color: #8f9a8f; line-height: 1.9; }
+  .keys b { color: #cfe8cf; font-weight: 600; }
+
+  #deadStats { font-size: 15px; color: #e0c040; margin-top: 6px; font-variant-numeric: tabular-nums; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="radPanel" class="panel">
+    <div class="label">Радиация</div>
+    <div id="radValue">0.0 мкЗв/ч</div>
+    <div id="radBarWrap"><div id="radBar"></div></div>
+  </div>
+  <div id="dosePanel" class="panel">
+    <div class="label">Накопленная доза</div>
+    <div id="doseValue">0%</div>
+    <div id="doseBarWrap"><div id="doseBar"></div></div>
+  </div>
+  <div id="depthPanel" class="panel">
+    <div class="label">Глубина</div>
+    <div id="depthValue">0 м</div>
+    <div id="depthMax">Рекорд: 0 м</div>
+    <div id="oreValue">Руда: 0 / 0</div>
+  </div>
+  <div id="mapPanel" class="panel">
+    <div class="label">3D-карта шахты</div>
+    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="mapLegend">
+      <span><i class="sw" style="background:#163a1e"></i>ниже</span>
+      <span><i class="sw" style="background:#396c3b"></i>уровень</span>
+      <span><i class="sw" style="background:#5c9e58"></i>выше</span>
+      <span><i class="sw" style="background:#64ff6e"></i>уран</span>
+    </div>
+  </div>
+  <div id="hint">Нажмите, чтобы продолжить</div>
+  <div id="pickupHint">+1 руда</div>
+</div>
+
+<div id="overlayStart" class="overlay">
+  <h1>УРАНОВЫЕ РУДНИКИ</h1>
+  <p>Каждый горизонт шахты — станция на спиральном уклоне с ответвлениями: квершлаги ведут к залам, прямоугольным техническим камерам и рудным телам, а вертикальные стволы соединяют горизонты.</p>
+  <p>Цель: пройти как можно глубже, не получив смертельную дозу радиации. Держитесь подальше от светящихся зелёных кристаллов и не задерживайтесь в забоях.</p>
+  <p style="color:#8fc78f">На полу разбросаны светящиеся кристаллы руды — подходите к ним, чтобы собрать. Таблички на стенах укажут назначение выработок.</p>
+  <div class="keys">
+    <b>W A S D / стрелки</b> — движение &nbsp;·&nbsp; <b>Мышь</b> — осмотр &nbsp;·&nbsp; <b>Пробел</b> — прыжок &nbsp;·&nbsp; <b>Shift</b> — бег
+  </div>
+  <button id="btnStart" class="btn">НАЧАТЬ</button>
+</div>
+
+<div id="overlayDead" class="overlay hidden">
+  <h1>СМЕРТЕЛЬНАЯ ДОЗА</h1>
+  <h2>ПОРАЖЕНИЕ ОРГАНИЗМА</h2>
+  <p>Накопленная доза радиации превысила критическую отметку. Организм не выдержал облучения.</p>
+  <div id="deadStats"></div>
+  <button id="btnRestart" class="btn">ПЕРЕЗАПУСТИТЬ</button>
+</div>
+
+<script src="js/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     Константы
+     ============================================================ */
+  var WORLD_W = 96, WORLD_H = 64, WORLD_D = 96;
+  var ENTRANCE_Y = WORLD_H - 3;
+  var PLAYER_RADIUS = 0.32;
+  var PLAYER_HEIGHT = 1.7;
+  var PLAYER_EYE = 1.6;
+  var STEP_HEIGHT = 1.05;
+  var WALK_SPEED = 4.2;
+  var RUN_SPEED = 7.0;
+  var GRAVITY = 20;
+  var JUMP_VEL = 8.5;
+  var DOSE_CRITICAL = 100;
+  var DOSE_FACTOR = 0.0022;
+  var RECOVER_RATE = 3.0;
+  var JITTER = 0.22;
+  var ORE_PICKUP_RADIUS = 1.5;
+  var ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
+
+  /* ============================================================
+     Three.js
+     ============================================================ */
+  var canvas = document.getElementById("game");
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0c0a);
+  scene.fog = new THREE.FogExp2(0x0a0c0a, 0.045);
+
+  var camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.rotation.order = "YXZ";
+
+  var ambient = new THREE.AmbientLight(0x9a9a92, 0.4);
+  scene.add(ambient);
+
+  var flashTarget = new THREE.Object3D();
+  scene.add(flashTarget);
+  var flash = new THREE.SpotLight(0xfff0d0, 1.9, 40, 0.55, 0.45, 1.2);
+  flash.target = flashTarget;
+  scene.add(flash);
+
+  window.addEventListener("resize", function () {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  });
+
+  /* ============================================================
+     Текстуры
+     ============================================================ */
+  function makeNoiseCanvas(size, seed) {
+    var data = new Uint8ClampedArray(size * size * 4);
+    function hash(x, y) {
+      var h = seed ^ (x * 374761393) ^ (y * 668265263);
+      h = (h ^ (h >> 13)) * 1274126177;
+      return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+    }
+    function smooth(t) { return t * t * (3 - 2 * t); }
+    function noise2(x, y) {
+      var xi = Math.floor(x), yi = Math.floor(y);
+      var xf = x - xi, yf = y - yi;
+      var a = hash(xi, yi), b = hash(xi + 1, yi);
+      var c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+      var u = smooth(xf), v = smooth(yf);
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    }
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        var n = 0, amp = 1, fx = 1, total = 0;
+        for (var o = 0; o < 4; o++) {
+          n += noise2((x / size) * 5 * fx, (y / size) * 5 * fx) * amp;
+          total += amp; amp *= 0.5; fx *= 2;
+        }
+        n /= total;
+        var i = (y * size + x) * 4;
+        data[i] = 66 + n * 60; data[i+1] = 62 + n * 56; data[i+2] = 58 + n * 52; data[i+3] = 255;
+      }
+    }
+    return data;
+  }
+
+  function makeStoneTexture() {
+    var size = 128;
+    var cv = document.createElement("canvas");
+    cv.width = cv.height = size;
+    var ctx = cv.getContext("2d");
+    var img = ctx.createImageData(size, size);
+    img.data.set(makeNoiseCanvas(size, 1337));
+    ctx.putImageData(img, 0, 0);
+    ctx.strokeStyle = "rgba(18,16,14,0.55)";
+    for (var i = 0; i < 18; i++) {
+      ctx.beginPath();
+      var x = Math.random() * size, y = Math.random() * size;
+      ctx.moveTo(x, y);
+      for (var j = 0; j < 5; j++) {
+        x += (Math.random() - 0.5) * 30; y += (Math.random() - 0.5) * 30;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(190,190,175,0.10)";
+    for (var k = 0; k < 90; k++) {
+      ctx.fillRect(Math.random()*size, Math.random()*size, 1+Math.random()*2, 1+Math.random()*2);
+    }
+    var tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  var stoneTex = makeStoneTexture();
+
+  var stoneMat = new THREE.MeshLambertMaterial({ map: stoneTex, vertexColors: true, side: THREE.DoubleSide });
+  var uranMat = new THREE.MeshLambertMaterial({
+    map: stoneTex, color: 0x8fae8c, emissive: 0x1d5a1d, emissiveIntensity: 0.75,
+    vertexColors: true, side: THREE.DoubleSide
+  });
+  var crystalMat = new THREE.MeshLambertMaterial({
+    color: 0x123a16, emissive: 0x59ff7d, emissiveIntensity: 1.0, vertexColors: true
+  });
+
+  function hash3(x, y, z, s) {
+    var n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^
+            Math.imul(z | 0, 1274126177) ^ Math.imul(s | 0, 2246822519);
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    n ^= n >>> 16;
+    return (n >>> 0) / 4294967295;
+  }
+
+  /* ============================================================
+     Генерация
+     ============================================================ */
+  var grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
+  var sources = [];
+  var spiralPath = [];
+  var branchStarts = [];
+  var signRequests = [];
+  var oreNodes = [];
+
+  function gIdx(x, y, z) { return x + WORLD_W * (y + WORLD_H * z); }
+  function solidAt(x, y, z) {
+    if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return true;
+    return grid[gIdx(x, y, z)] !== 0;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  function carveSphere(cx, cy, cz, r) {
+    var r2 = r * r;
+    var x0 = Math.floor(cx-r), x1 = Math.ceil(cx+r);
+    var y0 = Math.floor(cy-r), y1 = Math.ceil(cy+r);
+    var z0 = Math.floor(cz-r), z1 = Math.ceil(cz+r);
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
+      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
+      var dx = x-cx, dy = y-cy, dz = z-cz;
+      if (dx*dx + dy*dy + dz*dz <= r2) grid[gIdx(x,y,z)] = 0;
+    }
+  }
+
+  /* Прямоугольная камера: карвим бокс по целочисленным границам */
+  function carveBox(x0, y0, z0, x1, y1, z1) {
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
+      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
+      grid[gIdx(x,y,z)] = 0;
+    }
+  }
+
+  function carveLine(x0, y0, z0, x1, y1, z1, r) {
+    var len = Math.sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0)+(z1-z0)*(z1-z0));
+    var steps = Math.max(1, Math.ceil(len / 0.6));
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      carveSphere(x0+(x1-x0)*t, y0+(y1-y0)*t, z0+(z1-z0)*t, r);
+    }
+  }
+
+  function placeUranium(x, y, z, depthMeters) {
+    var ang = Math.random() * Math.PI * 2;
+    var cx = x + Math.cos(ang) * 2.4, cy = y, cz = z + Math.sin(ang) * 2.4;
+    var r = 1.0 + Math.random() * (0.6 + depthMeters * 0.035);
+    var count = 0;
+    var x0 = Math.floor(cx-r), x1 = Math.ceil(cx+r);
+    var y0 = Math.floor(cy-r), y1 = Math.ceil(cy+r);
+    var z0 = Math.floor(cz-r), z1 = Math.ceil(cz+r);
+    for (var ix = x0; ix <= x1; ix++) for (var iy = y0; iy <= y1; iy++) for (var iz = z0; iz <= z1; iz++) {
+      if (ix<0||ix>=WORLD_W||iy<0||iy>=WORLD_H||iz<0||iz>=WORLD_D) continue;
+      var ddx = ix-cx, ddy = iy-cy, ddz = iz-cz;
+      if (ddx*ddx+ddy*ddy+ddz*ddz > r*r) continue;
+      if (grid[gIdx(ix,iy,iz)] === 1) { grid[gIdx(ix,iy,iz)] = 2; count++; }
+    }
+    if (count > 0) sources.push({ x: cx, y: cy, z: cz, strength: 1300 + Math.random()*700 });
+  }
+
+  function findFloorY(x, z, fromY) {
+    if (x < 0 || x >= WORLD_W || z < 0 || z >= WORLD_D) return -1;
+    var y0 = Math.min(WORLD_H - 2, fromY);
+    for (var y = y0; y >= 2; y--) {
+      if (grid[gIdx(x,y,z)] === 0 && grid[gIdx(x,y-1,z)] !== 0) return y;
+    }
+    return -1;
+  }
+
+  function generateMine() {
+    grid.fill(1);
+    sources.length = 0;
+    oreNodes.length = 0;
+    branchStarts.length = 0;
+    signRequests.length = 0;
+
+    var ex = Math.round(WORLD_W/2), ez = Math.round(WORLD_D/2), ey = ENTRANCE_Y;
+
+    carveSphere(ex, ey, ez, 4.5);
+
+    // Спиральный уклон
+    var HELIX_R = 9.5;
+    var path = [];
+    var ang = 0, hy = ey - 1.2;
+    while (hy > 7) {
+      path.push({ x: ex + Math.cos(ang)*HELIX_R, y: hy, z: ez + Math.sin(ang)*HELIX_R, a: ang });
+      ang += 0.085; hy -= 0.26;
+    }
+    spiralPath = path;
+    carveLine(ex, ey, ez, path[0].x, path[0].y, path[0].z, 2.45);
+
+    // Станции на каждом горизонте (~7 м)
+    var stations = [];
+    var lastY = ey;
+    for (var i = 0; i < path.length; i++) {
+      if (lastY - path[i].y >= 7) {
+        stations.push({ x: path[i].x, y: path[i].y, z: path[i].z, a: path[i].a });
+        lastY = path[i].y;
+      }
+    }
+
+    var usedLabels = {};
+    function uniqueLabel(arr) {
+      for (var t = 0; t < 10; t++) {
+        var l = arr[(Math.random()*arr.length)|0];
+        if (!usedLabels[l]) { usedLabels[l] = true; return l; }
+      }
+      return arr[(Math.random()*arr.length)|0];
+    }
+
+    var CC_PREFIXES = ["Квершлаг №", "Орт №", "Штрек №", "Просек №", "Сбойка №"];
+
+    for (var si = 0; si < stations.length; si++) {
+      var st = stations[si];
+      carveSphere(st.x, st.y, st.z, 3.2);
+
+      var numCC = 2 + (Math.random() < 0.6 ? 1 : 0);
+
+      for (var ci = 0; ci < numCC; ci++) {
+        var baseAng = st.a + (Math.random() - 0.5) * 2.2;
+        var dirX = Math.cos(baseAng), dirZ = Math.sin(baseAng);
+        var len = 10 + Math.random() * 15;
+        var endX = clamp(st.x + dirX*len, 5, WORLD_W-5);
+        var endZ = clamp(st.z + dirZ*len, 5, WORLD_D-5);
+        var endY = clamp(st.y + (Math.random()-0.5)*1.2, 5, WORLD_H-5);
+        var startX = st.x + dirX * 2.6;
+        var startZ = st.z + dirZ * 2.6;
+        carveLine(startX, st.y, startZ, endX, endY, endZ, 2.1);
+
+        var ccLabel = CC_PREFIXES[(Math.random()*CC_PREFIXES.length)|0] + (si+1) + "-" + (ci+1);
+
+        // Табличка у входа в квершлаг: внутри выработки, лицом назад к станции
+        signRequests.push({
+          x: startX + dirX*3.5, y: st.y - 1, z: startZ + dirZ*3.5,
+          text: ccLabel,
+          faceX: -dirX, faceZ: -dirZ
+        });
+
+        var roll = Math.random();
+
+        if (roll < 0.18 && si < stations.length - 1) {
+          // Вертикальный ствол вниз к следующей станции
+          var nextSt = stations[si+1];
+          var shaftTop = Math.round(endY) - 1;
+          var shaftBot = Math.round(nextSt.y) - 1;
+          if (shaftBot < shaftTop - 4) {
+            for (var vy = shaftTop; vy >= shaftBot; vy--) {
+              carveSphere(endX, vy, endZ, 1.35);
+            }
+            carveLine(endX, shaftBot, endZ, nextSt.x, nextSt.y, nextSt.z, 2.0);
+            signRequests.push({
+              x: endX - dirX*2.2, y: endY - 1, z: endZ - dirZ*2.2,
+              text: "Ствол " + (si+1) + " — вниз",
+              faceX: dirX, faceZ: dirZ
+            });
+          }
+        } else if (roll < 0.40) {
+          // Большой зал
+          var hallR = 3.5 + Math.random() * 2.5;
+          carveSphere(endX, endY, endZ, hallR);
+          var hallArr = ["Зал обрушения","Камера разгрузки","Дробильный комплекс","Рудосброс",
+            "Аккумулирующая камера","Зал ожидания","Камера грохочения","Бункерный комплекс",
+            "Рудный склад","Зал вентиляции","Камера перегрузки","Отстойник","Камера усреднения"];
+          var hallLabel = uniqueLabel(hallArr);
+          signRequests.push({
+            x: endX, y: endY - 1, z: endZ,
+            text: hallLabel,
+            faceX: -dirX, faceZ: -dirZ
+          });
+          if (Math.random() < 0.6) placeUranium(endX + (Math.random()-0.5)*2, endY, endZ + (Math.random()-0.5)*2, ENTRANCE_Y-endY);
+        } else if (roll < 0.62) {
+          // Прямоугольная техническая камера
+          var sideAng = baseAng + (Math.random()<0.5?1:-1)*(Math.PI/2 + (Math.random()-0.5)*0.5);
+          var sideX = clamp(endX + Math.cos(sideAng)*4, 4, WORLD_W-4);
+          var sideZ = clamp(endZ + Math.sin(sideAng)*4, 4, WORLD_D-4);
+          carveLine(endX, endY, endZ, sideX, endY, sideZ, 2.1);
+
+          var roomW = 3 + ((Math.random() * 3) | 0); // 3,4,5
+          var roomD = 3 + ((Math.random() * 3) | 0);
+          var roomH = 3 + ((Math.random() * 2) | 0); // 3,4
+          var rcx = Math.round(sideX), rcz = Math.round(sideZ);
+          var floorFeet = Math.round(endY) - 2;
+
+          carveBox(
+            rcx - (roomW>>1), floorFeet, rcz - (roomD>>1),
+            rcx + ((roomW-1)>>1), floorFeet + roomH - 1, rcz + ((roomD-1)>>1)
+          );
+
+          var techArr = ["Насосная камера","Электроподстанция","Зарядная камера","Склад ВМ",
+            "Медпункт","Диспетчерская","Вентиляционная камера","Компрессорная","Камера связи",
+            "Ремонтный участок","Камера дегазации","Трансформаторная","Камера ожидания",
+            "Инструментальная","Противопожарная камера","Склад ГСМ"];
+          var techLabel = uniqueLabel(techArr);
+          signRequests.push({
+            x: rcx, y: floorFeet + 1, z: rcz,
+            text: techLabel,
+            faceX: -Math.cos(sideAng), faceZ: -Math.sin(sideAng)
+          });
+        } else if (roll < 0.82) {
+          // Тупиковый забой с рудой
+          placeUranium(endX, endY, endZ, ENTRANCE_Y-endY);
+          if (Math.random() < 0.4) placeUranium(endX + (Math.random()-0.5)*3, endY, endZ + (Math.random()-0.5)*3, ENTRANCE_Y-endY);
+          signRequests.push({
+            x: endX - dirX*1.5, y: endY - 1, z: endZ - dirZ*1.5,
+            text: "Забой " + (si+1) + "-бис",
+            faceX: dirX, faceZ: dirZ
+          });
+        } else {
+          // Рудное тело
+          placeUranium(endX, endY, endZ, ENTRANCE_Y-endY);
+          placeUranium(endX + (Math.random()-0.5)*4, endY, endZ + (Math.random()-0.5)*4, ENTRANCE_Y-endY);
+          signRequests.push({
+            x: endX - dirX*1.5, y: endY - 1, z: endZ - dirZ*1.5,
+            text: "Рудное тело",
+            faceX: dirX, faceZ: dirZ
+          });
+        }
+
+        branchStarts.push({ x: startX + dirX*2, y: st.y, z: startZ + dirZ*2 });
+      }
+    }
+
+    // Спираль — последней, чтобы пандус был целым
+    for (var k = 0; k < path.length; k++) carveSphere(path[k].x, path[k].y, path[k].z, 2.45);
+
+    signRequests.push({
+      x: ex + 2.5, y: ey - 1, z: ez,
+      text: "Центральная шахта", faceX: 1, faceZ: 0
+    });
+    signRequests.push({
+      x: ex - 2.5, y: ey - 1, z: ez,
+      text: "Выход на поверхность", faceX: -1, faceZ: 0
+    });
+
+    placeUranium(ex + 5, ey - 1, ez + 5, 1);
+    placeUranium(ex - 5, ey - 2, ez - 5, 2);
+
+    return { x: ex, y: ey - 3, z: ez, yaw: Math.random() * Math.PI * 2 };
+  }
+
+  /* ============================================================
+     Геометрия мира
+     ============================================================ */
+  var FACES = [
+    { n: [ 1, 0, 0], c: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
+    { n: [-1, 0, 0], c: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
+    { n: [ 0, 1, 0], c: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] },
+    { n: [ 0,-1, 0], c: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] },
+    { n: [ 0, 0, 1], c: [[0,0,1],[0,1,1],[1,1,1],[1,0,1]] },
+    { n: [ 0, 0,-1], c: [[1,0,0],[1,1,0],[0,1,0],[0,0,0]] }
+  ];
+  var FACE_UV = [[0,0],[0,1],[1,1],[1,0]];
+
+  var CRY_VERTS = [
+    [0,1,0],[0,-0.6,0],[0.45,0.12,0],[0,0.12,0.45],[-0.45,0.12,0],[0,0.12,-0.45]
+  ];
+  var CRY_FACES = [
+    [0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]
+  ];
+
+  function pushCrystal(cx, cy, cz, nx, ny, nz, r, h, twist, posArr, norArr, colArr, idxArr, shade) {
+    var ux = nx, uy = ny, uz = nz;
+    var hx = 0, hy = 1, hz = 0;
+    if (Math.abs(uy) > 0.85) { hx = 1; hy = 0; hz = 0; }
+    var rx = uy*hz - uz*hy, ry = uz*hx - ux*hz, rz = ux*hy - uy*hx;
+    var rl = Math.sqrt(rx*rx+ry*ry+rz*rz) || 1;
+    rx /= rl; ry /= rl; rz /= rl;
+    var fx = ry*uz - rz*uy, fy = rz*ux - rx*uz, fz = rx*uy - ry*ux;
+    var cs = Math.cos(twist), sn = Math.sin(twist);
+    var vs = [];
+    for (var i = 0; i < CRY_VERTS.length; i++) {
+      var v = CRY_VERTS[i];
+      var lx = v[0]*r, ly = v[1]*h, lz = v[2]*r;
+      var tx = lx*cs - lz*sn, tz = lx*sn + lz*cs;
+      vs.push([cx + rx*tx + ux*ly + fx*tz, cy + ry*tx + uy*ly + fy*tz, cz + rz*tx + uz*ly + fz*tz]);
+    }
+    for (var f = 0; f < CRY_FACES.length; f++) {
+      var A = vs[CRY_FACES[f][0]], B = vs[CRY_FACES[f][1]], C = vs[CRY_FACES[f][2]];
+      var e1x = B[0]-A[0], e1y = B[1]-A[1], e1z = B[2]-A[2];
+      var e2x = C[0]-A[0], e2y = C[1]-A[1], e2z = C[2]-A[2];
+      var fnx = e1y*e2z - e1z*e2y, fny = e1z*e2x - e1x*e2z, fnz = e1x*e2y - e1y*e2x;
+      var L = Math.sqrt(fnx*fnx+fny*fny+fnz*fnz) || 1;
+      fnx /= L; fny /= L; fnz /= L;
+      var mx = (A[0]+B[0]+C[0])/3 - cx, my = (A[1]+B[1]+C[1])/3 - cy, mz = (A[2]+B[2]+C[2])/3 - cz;
+      if (fnx*mx + fny*my + fnz*mz < 0) { fnx = -fnx; fny = -fny; fnz = -fnz; var tmp = B; B = C; C = tmp; }
+      var base = posArr.length/3;
+      posArr.push(A[0],A[1],A[2],B[0],B[1],B[2],C[0],C[1],C[2]);
+      norArr.push(fnx,fny,fnz,fnx,fny,fnz,fnx,fny,fnz);
+      colArr.push(shade,shade,shade,shade,shade,shade,shade,shade,shade);
+      idxArr.push(base,base+1,base+2);
+    }
+  }
+
+  var stoneMesh = null, uranMesh = null, crystalMesh = null;
+
+  function buildGeometry() {
+    var sp=[], sn=[], su=[], si=[], sc=[];
+    var up=[], un=[], uu=[], ui=[], uc=[];
+    var cp=[], cn=[], cc=[], ci=[];
+    var crystalSeeds = [];
+
+    function pushFace(px, py, pz, face, posArr, norArr, uvArr, idxArr, colArr, shade) {
+      var base = posArr.length/3;
+      for (var k = 0; k < 4; k++) {
+        var c = face.c[k];
+        var cx = px+c[0], cy = py+c[1], cz = pz+c[2];
+        posArr.push(
+          cx + (hash3(cx,cy,cz,11)-0.5)*2*JITTER,
+          cy + (hash3(cx,cy,cz,23)-0.5)*2*JITTER,
+          cz + (hash3(cx,cy,cz,37)-0.5)*2*JITTER
+        );
+        norArr.push(face.n[0], face.n[1], face.n[2]);
+        uvArr.push(FACE_UV[k][0], FACE_UV[k][1]);
+        colArr.push(shade*1.02, shade, shade*0.93);
+      }
+      idxArr.push(base,base+1,base+2,base,base+2,base+3);
+    }
+
+    for (var z = 0; z < WORLD_D; z++) for (var y = 0; y < WORLD_H; y++) for (var x = 0; x < WORLD_W; x++) {
+      var v = grid[gIdx(x,y,z)];
+      if (v === 0) continue;
+      var shade = 0.62 + hash3(x,y,z,7)*0.55;
+      for (var f = 0; f < 6; f++) {
+        var face = FACES[f];
+        var nx = x+face.n[0], ny = y+face.n[1], nz = z+face.n[2];
+        if (solidAt(nx,ny,nz)) continue;
+        if (v === 1) pushFace(x,y,z,face,sp,sn,su,si,sc,shade);
+        else {
+          pushFace(x,y,z,face,up,un,uu,ui,uc,0.5+hash3(x,y,z,7)*0.45);
+          if (hash3(x,y,z,41+f) < 0.8) {
+            crystalSeeds.push({ x:x, y:y, z:z, nx:face.n[0], ny:face.n[1], nz:face.n[2], s:hash3(x,y,z,53+f) });
+          }
+        }
+      }
+    }
+
+    for (var i = 0; i < crystalSeeds.length; i++) {
+      var s = crystalSeeds[i];
+      var rad = 0.13 + s.s*0.11;
+      var hgt = 0.16 + hash3(s.x,s.y,s.z,71)*0.22;
+      var px = s.x+0.5+s.nx*0.42, py = s.y+0.5+s.ny*0.42, pz = s.z+0.5+s.nz*0.42;
+      var tx, ty, tz;
+      if (Math.abs(s.ny) > 0.85) { tx=1; ty=0; tz=0; } else { tx=0; ty=1; tz=0; }
+      var b1x = s.ny*tz - s.nz*ty, b1y = s.nz*tx - s.nx*tz, b1z = s.nx*ty - s.ny*tx;
+      var bl = Math.sqrt(b1x*b1x+b1y*b1y+b1z*b1z) || 1;
+      b1x/=bl; b1y/=bl; b1z/=bl;
+      var b2x = s.ny*b1z - s.nz*b1y, b2y = s.nz*b1x - s.nx*b1z, b2z = s.nx*b1y - s.ny*b1x;
+      var o1 = (hash3(s.x,s.y,s.z,91)-0.5)*0.45, o2 = (hash3(s.x,s.y,s.z,97)-0.5)*0.45;
+      px += b1x*o1 + b2x*o2; py += b1y*o1 + b2y*o2; pz += b1z*o1 + b2z*o2;
+      var tiltX = (hash3(s.x,s.y,s.z,101)-0.5)*0.55, tiltZ = (hash3(s.x,s.y,s.z,103)-0.5)*0.55;
+      var dnx = s.nx + b1x*tiltX + b2x*tiltZ, dny = s.ny + b1y*tiltX + b2y*tiltZ, dnz = s.nz + b1z*tiltX + b2z*tiltZ;
+      var dl = Math.sqrt(dnx*dnx+dny*dny+dnz*dnz) || 1;
+      dnx/=dl; dny/=dl; dnz/=dl;
+      pushCrystal(px,py,pz,dnx,dny,dnz,rad,hgt,hash3(s.x,s.y,s.z,107)*6.283,cp,cn,cc,ci,0.55+hash3(s.x,s.y,s.z,109)*0.6);
+    }
+
+    function makeGeo(pos, nor, uv, col, idx) {
+      var g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+      if (uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+      if (col) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      g.setIndex(new THREE.Uint32BufferAttribute(idx, 1));
+      return g;
+    }
+
+    if (stoneMesh) { scene.remove(stoneMesh); stoneMesh.geometry.dispose(); }
+    if (uranMesh) { scene.remove(uranMesh); uranMesh.geometry.dispose(); }
+    if (crystalMesh) { scene.remove(crystalMesh); crystalMesh.geometry.dispose(); }
+
+    stoneMesh = new THREE.Mesh(makeGeo(sp,sn,su,sc,si), stoneMat); stoneMesh.frustumCulled = false; scene.add(stoneMesh);
+    uranMesh = new THREE.Mesh(makeGeo(up,un,uu,uc,ui), uranMat); uranMesh.frustumCulled = false; scene.add(uranMesh);
+    crystalMesh = new THREE.Mesh(makeGeo(cp,cn,null,cc,ci), crystalMat); crystalMesh.frustumCulled = false; scene.add(crystalMesh);
+  }
+
+  /* ============================================================
+     Таблички (только на стенах)
+     ============================================================ */
+    var signGroup = null;
+  var signTextures = {};
+  var SIGN_W = 1.5, SIGN_H = 0.4;
+  var SIGN_GEO = new THREE.PlaneGeometry(SIGN_W, SIGN_H);
+  var SIGN_OFFSET = 0.78;   // смещение от центра блока-стены
+
+  function makeSignTexture(text) {
+    if (signTextures[text]) return signTextures[text];
+    var w = 512, h = 128;
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var ctx = cv.getContext("2d");
+    ctx.fillStyle = "#24271f"; ctx.fillRect(0, 0, w, h);
+    for (var i = 0; i < 44; i++) {
+      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," +
+        (0.03+Math.random()*0.09).toFixed(3) + ")";
+      ctx.beginPath();
+      ctx.arc(Math.random()*w, Math.random()*h, 5+Math.random()*34, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#c9c49b"; ctx.lineWidth = 6;
+    ctx.strokeRect(7, 7, w-14, h-14);
+    ctx.fillStyle = "#ece8ce"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    var fs = 74;
+    ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
+    while (ctx.measureText(text).width > w - 64 && fs > 20) {
+      fs -= 4; ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
+    }
+    ctx.fillText(text, w/2, h/2 + 3);
+    var tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4;
+    signTextures[text] = tex;
+    return tex;
+  }
+
+  /* Ставим табличку на стену. Сначала пробуем "строгий" режим —
+     стена должна тянуться в перпендикуляре хотя бы на 1 блок, чтобы
+     табличка лежала на плоскости, а не торчала в проём. Если не
+     получилось — "мягкий" режим (как раньше). В обоих режимах
+     проверяется, что перед всей шириной таблички нет блоков, и
+     табличка вынесена за пределы джиттера стены. */
+  function tryWallSign(x, y, z, text, prefFaceX, prefFaceZ) {
+    if (tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, true)) return true;
+    return tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, false);
+  }
+
+  function tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, strict) {
+    var xi = Math.round(x), zi = Math.round(z);
+
+    var dirs = [];
+    if (prefFaceX !== undefined && prefFaceZ !== undefined) {
+      var fx, fz;
+      if (Math.abs(prefFaceX) >= Math.abs(prefFaceZ)) {
+        fx = Math.sign(prefFaceX) || 1; fz = 0;
+      } else {
+        fx = 0; fz = Math.sign(prefFaceZ) || 1;
+      }
+      dirs.push([-fx, -fz]);
+    }
+    var cardinals = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (var c = 0; c < cardinals.length; c++) {
+      var dup = false;
+      for (var dd = 0; dd < dirs.length; dd++) {
+        if (dirs[dd][0] === cardinals[c][0] && dirs[dd][1] === cardinals[c][1]) { dup = true; break; }
+      }
+      if (!dup) dirs.push(cardinals[c]);
+    }
+
+    var yTries = [Math.round(y), Math.round(y) + 1, Math.round(y) - 1, Math.round(y) + 2];
+    var halfW = Math.ceil(SIGN_W / 2);
+
+    for (var yi = 0; yi < yTries.length; yi++) {
+      var yTry = yTries[yi];
+      if (yTry < 2 || yTry >= WORLD_H - 2) continue;
+
+      for (var d = 0; d < dirs.length; d++) {
+        var dx = dirs[d][0], dz = dirs[d][1];
+        var perpX = dz, perpZ = -dx;
+
+        for (var dist = 1; dist <= 4; dist++) {
+          var wx = xi + dx * dist;
+          var wz = zi + dz * dist;
+          if (wx < 1 || wx >= WORLD_W - 1 || wz < 1 || wz >= WORLD_D - 1) break;
+
+          // Базовая стена
+          if (!solidAt(wx, yTry, wz)) continue;
+          if (!solidAt(wx, yTry + 1, wz)) continue;
+          if (solidAt(wx - dx, yTry, wz - dz)) continue;
+          if (solidAt(wx - dx, yTry + 1, wz - dz)) continue;
+
+          // Свободно ли впереди по ВСЕЙ ширине таблички (а не только в центре)
+          var frontBlocked = false;
+          for (var w = -halfW; w <= halfW; w++) {
+            var fX = wx + perpX * w - dx;
+            var fZ = wz + perpZ * w - dz;
+            if (solidAt(fX, yTry, fZ) || solidAt(fX, yTry + 1, fZ)) {
+              frontBlocked = true;
+              break;
+            }
+          }
+          if (frontBlocked) continue;
+
+          if (strict) {
+            // Требуем, чтобы стена тянулась вдоль ширины таблички
+            var sideSupport = false;
+            for (var w2 = -halfW; w2 <= halfW; w2++) {
+              if (w2 === 0) continue;
+              if (solidAt(wx + perpX * w2, yTry, wz + perpZ * w2) &&
+                  solidAt(wx + perpX * w2, yTry + 1, wz + perpZ * w2)) {
+                sideSupport = true;
+                break;
+              }
+            }
+            if (!sideSupport) continue;
+          }
+
+          var mat = new THREE.MeshBasicMaterial({
+            map: makeSignTexture(text),
+            color: 0xbbbbbb,
+            side: THREE.DoubleSide
+          });
+          var mesh = new THREE.Mesh(SIGN_GEO, mat);
+          mesh.position.set(
+            wx + 0.5 - dx * SIGN_OFFSET,
+            yTry + 0.5,
+            wz + 0.5 - dz * SIGN_OFFSET
+          );
+          mesh.rotation.y = Math.atan2(-dx, -dz);
+          signGroup.add(mesh);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /* ============================================================
+     Вагонетки
+     ============================================================ */
+  var cartGroup = null;
+
+  function makeCart(ore, mats) {
+    var g = new THREE.Group();
+    var L = 1.1, Wd = 0.72, wallT = 0.06, wallH = 0.5, baseY = 0.26;
+    var floorM = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, Wd), mats.dark);
+    floorM.position.y = baseY; g.add(floorM);
+    var w1 = new THREE.Mesh(new THREE.BoxGeometry(L, wallH, wallT), mats.body);
+    w1.position.set(0, baseY+wallH/2, Wd/2-wallT/2); g.add(w1);
+    var w2 = w1.clone(); w2.position.z = -(Wd/2-wallT/2); g.add(w2);
+    var e1 = new THREE.Mesh(new THREE.BoxGeometry(wallT, wallH, Wd), mats.body);
+    e1.position.set(L/2-wallT/2, baseY+wallH/2, 0); g.add(e1);
+    var e2 = e1.clone(); e2.position.x = -(L/2-wallT/2); g.add(e2);
+    var wheelGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.07, 12);
+    var wpos = [[-0.36,-0.4],[0.36,-0.4],[-0.36,0.4],[0.36,0.4]];
+    for (var i = 0; i < 4; i++) {
+      var wh = new THREE.Mesh(wheelGeo, mats.wheel);
+      wh.rotation.z = Math.PI/2;
+      wh.position.set(wpos[i][0], 0.15, wpos[i][1]);
+      g.add(wh);
+    }
+    var pileMat = ore ? mats.ore : mats.rock;
+    var chunks = 6 + ((Math.random()*3)|0);
+    for (var k = 0; k < chunks; k++) {
+      var r = 0.08 + Math.random()*0.09;
+      var chunk = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), pileMat);
+      chunk.position.set((Math.random()-0.5)*0.8, baseY+0.1+Math.random()*0.18, (Math.random()-0.5)*0.44);
+      chunk.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+      g.add(chunk);
+    }
+    return g;
+  }
+
+  /* ============================================================
+     Рудные кристаллы-подбиралки
+     ============================================================ */
+  var oreGroup = null;
+  var oreItems = [];
+  var oreCollected = 0;
+  var pickupHintTimer = 0;
+
+  function createOrePickupMesh() {
+    var g = new THREE.Group();
+    var count = 3 + ((Math.random() * 2) | 0);
+    for (var i = 0; i < count; i++) {
+      var size = 0.08 + Math.random() * 0.06;
+      var geo = new THREE.OctahedronGeometry(size, 0);
+      var mat = new THREE.MeshLambertMaterial({
+        color: 0x0d2a12,
+        emissive: 0x4cff66,
+        emissiveIntensity: 1.4
+      });
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(
+        (Math.random()-0.5) * 0.28,
+        0.1 + Math.random() * 0.22,
+        (Math.random()-0.5) * 0.28
+      );
+      m.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+      g.add(m);
+    }
+    var light = new THREE.PointLight(0x55ff77, 0.75, 3);
+    light.position.y = 0.2;
+    g.add(light);
+    return g;
+  }
+
+  function buildOrePickups() {
+    if (oreGroup) scene.remove(oreGroup);
+    oreGroup = new THREE.Group();
+    oreItems.length = 0;
+    oreCollected = 0;
+
+    for (var i = 0; i < sources.length; i++) {
+      if (oreItems.length >= 90) break;
+      var s = sources[i];
+      var count = 1 + ((Math.random() * 3) | 0);
+      for (var c = 0; c < count; c++) {
+        if (oreItems.length >= 90) break;
+        var ang = Math.random() * Math.PI * 2;
+        var dist = 1.6 + Math.random() * 2.4;
+        var px = s.x + Math.cos(ang) * dist;
+        var pz = s.z + Math.sin(ang) * dist;
+        var xi = Math.round(px), zi = Math.round(pz);
+        if (xi < 2 || xi >= WORLD_W - 2 || zi < 2 || zi >= WORLD_D - 2) continue;
+        var fy = findFloorY(xi, zi, Math.round(s.y) + 4);
+        if (fy < 2) continue;
+        if (solidAt(xi, fy, zi) || solidAt(xi, fy + 1, zi)) continue;
+
+        var mesh = createOrePickupMesh();
+        mesh.position.set(xi + 0.5, fy + 0.05, zi + 0.5);
+        oreGroup.add(mesh);
+        oreItems.push({
+          x: xi + 0.5,
+          y: fy + 0.05,
+          z: zi + 0.5,
+          baseY: fy + 0.05,
+          mesh: mesh,
+          collected: false,
+          phase: Math.random() * Math.PI * 2
+        });
+      }
+    }
+
+    scene.add(oreGroup);
+    updateOreHUD();
+  }
+
+  function updateOreHUD() {
+    var el = document.getElementById("oreValue");
+    if (el) el.textContent = "Руда: " + oreCollected + " / " + oreItems.length;
+  }
+
+  function showPickupHint() {
+    var el = document.getElementById("pickupHint");
+    if (!el) return;
+    el.classList.add("show");
+    pickupHintTimer = 0.9;
+  }
+
+  /* ============================================================
+     Сборка декора
+     ============================================================ */
+  function buildDecor() {
+    if (signGroup) scene.remove(signGroup);
+    signGroup = new THREE.Group();
+    for (var i = 0; i < signRequests.length; i++) {
+      var req = signRequests[i];
+      tryWallSign(req.x, req.y, req.z, req.text, req.faceX, req.faceZ);
+    }
+    scene.add(signGroup);
+
+    if (cartGroup) scene.remove(cartGroup);
+    cartGroup = new THREE.Group();
+    var mats = {
+      body: new THREE.MeshLambertMaterial({ color: 0x40463c }),
+      dark: new THREE.MeshLambertMaterial({ color: 0x2a2c26 }),
+      wheel: new THREE.MeshLambertMaterial({ color: 0x1e1f1c }),
+      ore: new THREE.MeshLambertMaterial({ color: 0x2e5a34, emissive: 0x0f3f14, emissiveIntensity: 0.9 }),
+      rock: new THREE.MeshLambertMaterial({ color: 0x6b6459 })
+    };
+
+    var cartSpots = [];
+    for (var b = 0; b < branchStarts.length; b++) {
+      if (Math.random() < 0.35) {
+        var br = branchStarts[b];
+        var fy = findFloorY(Math.round(br.x), Math.round(br.z), Math.round(br.y) + 3);
+        if (fy >= 2 && !solidAt(Math.round(br.x), fy, Math.round(br.z))) {
+          cartSpots.push({ x: br.x, y: fy, z: br.z, ore: Math.random() < 0.55, yaw: Math.random() * Math.PI * 2 });
+        }
+      }
+      if (cartSpots.length >= 10) break;
+    }
+    for (var c = 15; c < spiralPath.length && cartSpots.length < 14; c += 22) {
+      if (Math.random() > 0.5) continue;
+      var pp = spiralPath[c];
+      var xi = Math.round(pp.x), zi = Math.round(pp.z);
+      if (xi < 2 || xi > WORLD_W-3 || zi < 2 || zi > WORLD_D-3) continue;
+      var fy2 = findFloorY(xi, zi, Math.round(pp.y) + 3);
+      if (fy2 < 2) continue;
+      cartSpots.push({ x: xi, y: fy2, z: zi, ore: Math.random() < 0.5, yaw: Math.random() * Math.PI * 2 });
+    }
+
+    for (var q = 0; q < cartSpots.length; q++) {
+      var cs = cartSpots[q];
+      var cart = makeCart(cs.ore, mats);
+      cart.position.set(cs.x + 0.5, cs.y, cs.z + 0.5);
+      cart.rotation.y = cs.yaw;
+      cartGroup.add(cart);
+    }
+    scene.add(cartGroup);
+  }
+
+  /* ============================================================
+   Кликабельная панель "Выход на поверхность" на потолке
+   ============================================================ */
+  var SURFACE_URL = "../index.html"; // ← сюда подставьте ваш HTML-файл
+
+  function buildCeilingExit() {
+    var geom = new THREE.PlaneGeometry(5, 5);
+    var mat = new THREE.MeshBasicMaterial({
+      color: 0xdfffdf,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    var mesh = new THREE.Mesh(geom, mat);
+    // Лежит горизонтально, нормаль направлена вниз — к игроку
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(startPos.x + 0.5, WORLD_H - 1.1, startPos.z + 0.5);
+    mesh.name = "ceilingExit";
+    scene.add(mesh);
+
+    // Мягкое свечение, чтобы панель было видно
+    var glow = new THREE.PointLight(0xd8ffd8, 1.4, 10);
+    glow.position.set(mesh.position.x, mesh.position.y - 0.5, mesh.position.z);
+    scene.add(glow);
+
+    return mesh;
+  }
+
+  /* ============================================================
+     Состояние игрока
+     ============================================================ */
+  var startPos = null;
+  var PLAYER = {
+    pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+    yaw: 0, pitch: 0, onGround: false, dose: 0, maxDepth: 0
+  };
+
+  var keys = {};
+  var gameState = "menu";
+  var gameTime = 0;
+
+  window.addEventListener("keydown", function (e) { keys[e.code] = true; if (e.code === "Space") e.preventDefault(); });
+  window.addEventListener("keyup", function (e) { keys[e.code] = false; });
+
+  function onPointerMove(e) {
+    if (gameState !== "playing") return;
+    PLAYER.yaw -= e.movementX * 0.0022;
+    PLAYER.pitch -= e.movementY * 0.0022;
+    var lim = Math.PI/2 - 0.02;
+    PLAYER.pitch = clamp(PLAYER.pitch, -lim, lim);
+  }
+  function onPointerLockChange() {
+    var locked = document.pointerLockElement === canvas;
+    var hint = document.getElementById("hint");
+    if (gameState === "playing") hint.style.display = locked ? "none" : "block";
+  }
+  canvas.addEventListener("mousemove", onPointerMove);
+  document.addEventListener("pointerlockchange", onPointerLockChange);
+  canvas.addEventListener("click", function () {
+    if (gameState === "playing" && document.pointerLockElement !== canvas) canvas.requestPointerLock();
+  });
+
+  /* ============================================================
+     Audio
+     ============================================================ */
+  var audioCtx = null, clickBuf = null, clickTimer = 0, clickInterval = 1.2;
+  var humNodes = null;
+
+  /* Тихий таинственный эмбиент-гул шахты.
+   Собирается из нескольких процедурных слоёв:
+   - низкий дрон с расстроенными синусами (медленное "битьё")
+   - суб-бас для ощущения глубины
+   - треугольник с lowpass + медленной LFO (эффект "дыхания")
+   - фильтрованный шум (шорох вентиляции / каверн) */
+  function startHum() {
+    if (!audioCtx || humNodes) return;
+    var now = audioCtx.currentTime;
+
+    var master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.06, now + 4);   // плавное вступление
+    master.connect(audioCtx.destination);
+
+    // ——— Низкий дрон (два синуса с расстройкой → медленное битьё)
+    var g1 = audioCtx.createGain();
+    g1.gain.value = 0.55;
+    g1.connect(master);
+
+    var osc1 = audioCtx.createOscillator();
+    osc1.type = "sine";
+    osc1.frequency.value = 52;
+    var osc2 = audioCtx.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.value = 52.7;   // битьё ~0.7 Гц
+    if (audioCtx.createStereoPanner) {
+      var panL = audioCtx.createStereoPanner(); panL.pan.value = -0.35;
+      var panR = audioCtx.createStereoPanner(); panR.pan.value =  0.35;
+      osc1.connect(panL); panL.connect(g1);
+      osc2.connect(panR); panR.connect(g1);
+    } else {
+      osc1.connect(g1); osc2.connect(g1);
+    }
+
+    // ——— Суб-бас для «глубины»
+    var osc4 = audioCtx.createOscillator();
+    osc4.type = "sine";
+    osc4.frequency.value = 33;
+    var g4 = audioCtx.createGain();
+    g4.gain.value = 0.2;
+    osc4.connect(g4); g4.connect(master);
+
+    // ——— Средний гармоник с медленной LFO на фильтре ("дыхание")
+    var lp = audioCtx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 240;
+    lp.Q.value = 1.4;
+    lp.connect(master);
+
+    var osc3 = audioCtx.createOscillator();
+    osc3.type = "triangle";
+    osc3.frequency.value = 104;
+    var g3 = audioCtx.createGain();
+    g3.gain.value = 0.22;
+    osc3.connect(g3); g3.connect(lp);
+
+    var lfo = audioCtx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 0.06;             // период ~16 секунд
+    var lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 90;                // размах 240 ± 90 Гц
+    lfo.connect(lfoGain);
+    lfoGain.connect(lp.frequency);
+
+    // ——— Приглушённый шум — «воздух» шахты
+    var noiseLen = Math.floor(audioCtx.sampleRate * 4);
+    var noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate);
+    var nd = noiseBuf.getChannelData(0);
+    // коричневый шум: интеграл белого, звучит "глубже" и мягче
+    var acc = 0;
+    for (var i = 0; i < nd.length; i++) {
+      acc = (acc + (Math.random() * 2 - 1) * 0.02) * 0.998;
+      nd[i] = acc * 6;
+    }
+    var noise = audioCtx.createBufferSource();
+    noise.buffer = noiseBuf;
+    noise.loop = true;
+    var nf = audioCtx.createBiquadFilter();
+    nf.type = "lowpass";
+    nf.frequency.value = 150;
+    nf.Q.value = 0.6;
+    var ng = audioCtx.createGain();
+    ng.gain.value = 0.35;
+    noise.connect(nf); nf.connect(ng); ng.connect(master);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc3.start(now);
+    osc4.start(now);
+    noise.start(now);
+    lfo.start(now);
+
+    humNodes = { master: master };
+  }
+
+  function initAudio() {
+    if (audioCtx) { if (audioCtx.state === "suspended") audioCtx.resume(); return; }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    var sr = audioCtx.sampleRate;
+    var len = Math.floor(sr * 0.03);
+    clickBuf = audioCtx.createBuffer(1, len, sr);
+    var d = clickBuf.getChannelData(0);
+    for (var i = 0; i < len; i++) {
+      var t = i / len;
+      d[i] = (Math.random()*2-1) * Math.pow(1-t, 3) * (Math.random() < 0.5 ? 1 : -1);
+    }
+    startHum();
+  }
+
+  function playClick(vol) {
+    if (!audioCtx) return;
+    var src = audioCtx.createBufferSource();
+    src.buffer = clickBuf;
+    var g = audioCtx.createGain();
+    g.gain.value = vol;
+    src.connect(g); g.connect(audioCtx.destination);
+    src.start();
+  }
+
+  function playPickupSound() {
+    if (!audioCtx) return;
+    var now = audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(660, now);
+    osc.frequency.exponentialRampToValueAtTime(1320, now + 0.09);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.02, now + 0.012); // 0.02 громкость добычи руды
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  /* ============================================================
+     3D-мини-карта
+     ============================================================ */
+  var MAP_R = 13, MAP_W = 190, TILE_W = 7, TILE_H = 3.6, H_SCALE = 2.8, SKIRT = 3.2;
+  var mapCanvas = document.getElementById("minimap");
+  var mapCtx = mapCanvas.getContext("2d");
+  var mapTick = 0;
+
+  function nearestFloor(x, z, py) {
+    var y0 = Math.min(WORLD_H-2, Math.floor(py + 10));
+    var y1 = Math.max(1, Math.floor(py - 18));
+    var best = -1, bestD = 1e9;
+    for (var y = y0; y >= y1; y--) {
+      if (grid[gIdx(x,y,z)] === 0 && grid[gIdx(x,y-1,z)] !== 0) {
+        var d = Math.abs(y+0.5 - py);
+        if (d < bestD) { bestD = d; best = y; }
+      }
+    }
+    return best;
+  }
+
+  function updateMinimap() {
+    var W = MAP_W, H = MAP_W;
+    mapCtx.clearRect(0, 0, W, H);
+    mapCtx.fillStyle = "rgba(6,10,7,0.92)";
+    mapCtx.fillRect(0, 0, W, H);
+    var px = Math.floor(PLAYER.pos.x), pz = Math.floor(PLAYER.pos.z), py = PLAYER.pos.y;
+    var cells = [];
+    for (var dz = -MAP_R; dz <= MAP_R; dz++) {
+      for (var dx = -MAP_R; dx <= MAP_R; dx++) {
+        if (dx*dx + dz*dz > MAP_R*MAP_R + MAP_R) continue;
+        var x = px + dx, z = pz + dz;
+        if (x < 1 || x >= WORLD_W-1 || z < 1 || z >= WORLD_D-1) continue;
+        var fl = nearestFloor(x, z, py);
+        if (fl < 0) continue;
+        var ore = false;
+        for (var yy = fl-1; yy <= fl+2; yy++) {
+          if (yy < 0 || yy >= WORLD_H) continue;
+          if (grid[gIdx(x,yy,z)] === 2) { ore = true; break; }
+        }
+        cells.push({ dx: dx, dz: dz, h: fl, ore: ore });
+      }
+    }
+    cells.sort(function (a, b) {
+      var sa = a.dx + a.dz, sb = b.dx + b.dz;
+      if (sa !== sb) return sa - sb;
+      return a.h - b.h;
+    });
+    var hw = TILE_W/2, hh = TILE_H/2;
+    var cx = W/2, cy = H/2 + 12;
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i];
+      var sx = cx + (c.dx - c.dz)*hw;
+      var sy = cy + (c.dx + c.dz)*hh - (c.h - py)*H_SCALE;
+      var t = clamp(((c.h - py) + 9)/18, 0, 1);
+      var r, g, b;
+      if (c.ore) { r = 60 + t*60; g = 210 + t*45; b = 90 + t*50; }
+      else { r = 22 + t*70; g = 58 + t*100; b = 30 + t*58; }
+      var topCol = "rgb(" + (r|0) + "," + (g|0) + "," + (b|0) + ")";
+      var leftCol = "rgb(" + ((r*0.55)|0) + "," + ((g*0.55)|0) + "," + ((b*0.55)|0) + ")";
+      var rightCol = "rgb(" + ((r*0.78)|0) + "," + ((g*0.78)|0) + "," + ((b*0.78)|0) + ")";
+      mapCtx.beginPath();
+      mapCtx.moveTo(sx-hw, sy); mapCtx.lineTo(sx, sy+hh);
+      mapCtx.lineTo(sx, sy+hh+SKIRT); mapCtx.lineTo(sx-hw, sy+SKIRT);
+      mapCtx.closePath(); mapCtx.fillStyle = leftCol; mapCtx.fill();
+      mapCtx.beginPath();
+      mapCtx.moveTo(sx, sy+hh); mapCtx.lineTo(sx+hw, sy);
+      mapCtx.lineTo(sx+hw, sy+SKIRT); mapCtx.lineTo(sx, sy+hh+SKIRT);
+      mapCtx.closePath(); mapCtx.fillStyle = rightCol; mapCtx.fill();
+      mapCtx.beginPath();
+      mapCtx.moveTo(sx, sy-hh); mapCtx.lineTo(sx+hw, sy);
+      mapCtx.lineTo(sx, sy+hh); mapCtx.lineTo(sx-hw, sy);
+      mapCtx.closePath(); mapCtx.fillStyle = topCol; mapCtx.fill();
+    }
+    var selfFl = nearestFloor(px, pz, py);
+    var selfSy = (selfFl < 0) ? cy : cy - (selfFl - py)*H_SCALE;
+    mapCtx.beginPath();
+    mapCtx.ellipse(cx, selfSy + hh*0.2, hw*1.25, hh*1.25, 0, 0, Math.PI*2);
+    mapCtx.fillStyle = "rgba(255,220,110,0.16)";
+    mapCtx.fill();
+    var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
+    var vx = fwdX*hw - fwdZ*hw, vy = fwdX*hh + fwdZ*hh;
+    mapCtx.save();
+    mapCtx.translate(cx, selfSy - 2);
+    mapCtx.rotate(Math.atan2(vy, vx) + Math.PI/2);
+    mapCtx.beginPath();
+    mapCtx.moveTo(0, -8); mapCtx.lineTo(5.2, 6);
+    mapCtx.lineTo(0, 3); mapCtx.lineTo(-5.2, 6);
+    mapCtx.closePath();
+    mapCtx.fillStyle = "#ffd76a";
+    mapCtx.strokeStyle = "rgba(0,0,0,0.75)";
+    mapCtx.lineWidth = 1.5;
+    mapCtx.fill(); mapCtx.stroke();
+    mapCtx.restore();
+    mapCtx.strokeStyle = "rgba(110,170,120,0.18)";
+    mapCtx.lineWidth = 1;
+    mapCtx.strokeRect(0.5, 0.5, W-1, H-1);
+  }
+
+  /* ============================================================
+     Игровой цикл
+     ============================================================ */
+  function computeRadiation(px, py, pz) {
+    var depthMeters = Math.max(0, ENTRANCE_Y - py);
+    var level = 0.15 + depthMeters * 0.04;
+    for (var i = 0; i < sources.length; i++) {
+      var s = sources[i];
+      var dx = px - s.x, dy = py - s.y, dz = pz - s.z;
+      level += s.strength / (1 + dx*dx + dy*dy + dz*dz);
+    }
+    return level;
+  }
+
+  function collides(px, py, pz) {
+    var r = PLAYER_RADIUS;
+    var x0 = Math.floor(px-r), x1 = Math.floor(px+r);
+    var y0 = Math.floor(py), y1 = Math.floor(py+PLAYER_HEIGHT);
+    var z0 = Math.floor(pz-r), z1 = Math.floor(pz+r);
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
+      if (solidAt(x, y, z)) return true;
+    }
+    return false;
+  }
+
+  function tryMove(axis, dist) {
+    var p = PLAYER.pos;
+    if (axis === "y") {
+      p.y += dist;
+      if (collides(p.x, p.y, p.z)) {
+        p.y -= dist;
+        if (dist < 0) PLAYER.onGround = true;
+        PLAYER.vel.y = 0;
+      }
+      return;
+    }
+    p[axis] += dist;
+    if (!collides(p.x, p.y, p.z)) return;
+    p[axis] -= dist;
+    var savedY = p.y;
+    p.y += STEP_HEIGHT;
+    p[axis] += dist;
+    if (collides(p.x, p.y, p.z)) {
+      p[axis] -= dist;
+      p.y = savedY;
+      PLAYER.vel[axis] = 0;
+    }
+  }
+
+  function update(dt) {
+    gameTime += dt;
+    var p = PLAYER.pos;
+    var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
+    var rightX = Math.cos(PLAYER.yaw), rightZ = -Math.sin(PLAYER.yaw);
+    var fwd = 0, strafe = 0;
+    if (keys.KeyW || keys.ArrowUp) fwd += 1;
+    if (keys.KeyS || keys.ArrowDown) fwd -= 1;
+    if (keys.KeyD || keys.ArrowRight) strafe += 1;
+    if (keys.KeyA || keys.ArrowLeft) strafe -= 1;
+    var speed = (keys.ShiftLeft || keys.ShiftRight) ? RUN_SPEED : WALK_SPEED;
+    if (fwd !== 0 || strafe !== 0) {
+      var inv = 1 / Math.sqrt(fwd*fwd + strafe*strafe);
+      fwd *= inv; strafe *= inv;
+      PLAYER.vel.x = (fwdX*fwd + rightX*strafe) * speed;
+      PLAYER.vel.z = (fwdZ*fwd + rightZ*strafe) * speed;
+    } else { PLAYER.vel.x = 0; PLAYER.vel.z = 0; }
+    if (keys.Space && PLAYER.onGround) { PLAYER.vel.y = JUMP_VEL; PLAYER.onGround = false; }
+    PLAYER.onGround = false;
+    PLAYER.vel.y -= GRAVITY * dt;
+    if (PLAYER.vel.y < -40) PLAYER.vel.y = -40;
+    tryMove("x", PLAYER.vel.x*dt);
+    tryMove("y", PLAYER.vel.y*dt);
+    tryMove("z", PLAYER.vel.z*dt);
+
+    // Сбор руды + анимация кристаллов
+    for (var oi = 0; oi < oreItems.length; oi++) {
+      var it = oreItems[oi];
+      if (it.collected) continue;
+      it.mesh.rotation.y += dt * 1.8;
+      it.mesh.position.y = it.baseY + Math.sin(gameTime * 2 + it.phase) * 0.09;
+
+      var odx = p.x - it.x;
+      var odz = p.z - it.z;
+      var ody = (p.y + 0.5) - it.baseY;
+      if (odx*odx + odz*odz < ORE_PICKUP_RADIUS2 && Math.abs(ody) < 1.6) {
+        it.collected = true;
+        it.mesh.visible = false;
+        oreCollected++;
+        playPickupSound();
+        updateOreHUD();
+        showPickupHint();
+      }
+    }
+
+    var level = computeRadiation(p.x, p.y, p.z);
+    if (level > 0.8) PLAYER.dose += level * DOSE_FACTOR * dt;
+    else PLAYER.dose = Math.max(0, PLAYER.dose - RECOVER_RATE*dt);
+    var depth = Math.max(0, ENTRANCE_Y - p.y);
+    if (depth > PLAYER.maxDepth) PLAYER.maxDepth = depth;
+
+    clickInterval = clamp(1.2 / (0.3 + level*0.01), 0.03, 1.4);
+    clickTimer += dt;
+    if (clickTimer >= clickInterval) {
+      var vol = clamp(0.06 + level*0.00015, 0.04, 0.6);
+      playClick(vol);
+      clickTimer = 0;
+    }
+
+    if (pickupHintTimer > 0) {
+      pickupHintTimer -= dt;
+      if (pickupHintTimer <= 0) {
+        var ph = document.getElementById("pickupHint");
+        if (ph) ph.classList.remove("show");
+      }
+    }
+
+    camera.position.set(p.x, p.y + PLAYER_EYE, p.z);
+    camera.rotation.y = PLAYER.yaw;
+    camera.rotation.x = PLAYER.pitch;
+    var cp = Math.cos(PLAYER.pitch);
+    var lx = -Math.sin(PLAYER.yaw)*cp, ly = Math.sin(PLAYER.pitch), lz = -Math.cos(PLAYER.yaw)*cp;
+    flashTarget.position.set(p.x + lx*8, p.y + PLAYER_EYE + ly*8, p.z + lz*8);
+    flash.position.copy(camera.position);
+    updateHUD(level, depth);
+    mapTick++;
+    if (mapTick % 5 === 0) updateMinimap();
+  }
+
+  function updateHUD(level, depth) {
+    var radValue = document.getElementById("radValue");
+    var radBar = document.getElementById("radBar");
+    radValue.textContent = level.toFixed(1) + " мкЗв/ч";
+    if (level < 1) radValue.style.color = "#55d455";
+    else if (level < 10) radValue.style.color = "#d0d040";
+    else if (level < 100) radValue.style.color = "#e09040";
+    else radValue.style.color = "#ff4a40";
+    radBar.style.width = Math.min(100, level*3) + "%";
+    var doseValue = document.getElementById("doseValue");
+    var doseBar = document.getElementById("doseBar");
+    doseValue.textContent = PLAYER.dose.toFixed(1) + "%";
+    doseBar.style.width = Math.min(100, PLAYER.dose) + "%";
+    doseBar.classList.toggle("warn", PLAYER.dose > 75);
+    document.getElementById("depthValue").textContent = depth.toFixed(1) + " м";
+    document.getElementById("depthMax").textContent = "Рекорд: " + PLAYER.maxDepth.toFixed(1) + " м";
+  }
+
+  function resetGame(entrance) {
+    PLAYER.pos.set(entrance.x + 0.5, entrance.y + 1.5, entrance.z + 0.5);
+    PLAYER.vel.set(0, 0, 0);
+    PLAYER.yaw = entrance.yaw + Math.PI;
+    PLAYER.pitch = -0.05;
+    PLAYER.onGround = false;
+    PLAYER.dose = 0;
+    PLAYER.maxDepth = 0;
+    clickTimer = 0;
+    gameTime = 0;
+    pickupHintTimer = 0;
+    var ph = document.getElementById("pickupHint");
+    if (ph) ph.classList.remove("show");
+
+    // Сброс руды
+    oreCollected = 0;
+    for (var oi = 0; oi < oreItems.length; oi++) {
+      oreItems[oi].collected = false;
+      oreItems[oi].mesh.visible = true;
+      oreItems[oi].mesh.position.y = oreItems[oi].baseY;
+    }
+    updateOreHUD();
+    updateMinimap();
+  }
+
+  function gameOver() {
+    gameState = "dead";
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+    document.getElementById("overlayDead").classList.remove("hidden");
+    document.getElementById("deadStats").innerHTML =
+      "Глубина: " + PLAYER.maxDepth.toFixed(1) + " м<br>Собрано руды: " + oreCollected + " из " + oreItems.length;
+  }
+
+  function startGame() {
+    initAudio();
+    document.getElementById("overlayStart").classList.add("hidden");
+    document.getElementById("overlayDead").classList.add("hidden");
+    document.getElementById("hint").style.display = "none";
+    resetGame(startPos);
+    gameState = "playing";
+    canvas.requestPointerLock();
+  }
+
+  document.getElementById("btnStart").addEventListener("click", startGame);
+  document.getElementById("btnRestart").addEventListener("click", startGame);
+
+  /* ============================================================
+     Запуск
+     ============================================================ */
+  startPos = generateMine();
+  buildGeometry();
+  buildDecor();
+  buildOrePickups();
+
+  var ceilingExit = buildCeilingExit();
+
+  // Клик по панели (работает даже при pointer lock)
+  var _exitRay = new THREE.Raycaster();
+  var _screenCenter = new THREE.Vector2(0, 0); // NDC-центр экрана
+
+  canvas.addEventListener("mousedown", function () {
+    if (gameState !== "playing" || document.pointerLockElement !== canvas) return;
+
+    _exitRay.setFromCamera(_screenCenter, camera);
+    var hits = _exitRay.intersectObject(ceilingExit, false);
+    if (hits.length > 0 && hits[0].distance < 25) {
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+      window.location.href = SURFACE_URL;
+    }
+  });
+
+  resetGame(startPos);
+  camera.position.set(PLAYER.pos.x, PLAYER.pos.y + PLAYER_EYE, PLAYER.pos.z);
+  camera.rotation.y = PLAYER.yaw;
+  camera.rotation.x = PLAYER.pitch;
+
+  var clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    if (gameState === "playing" && document.pointerLockElement === canvas) {
+      update(dt);
+      if (PLAYER.dose >= DOSE_CRITICAL) gameOver();
+    }
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

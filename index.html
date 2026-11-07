@@ -511,7 +511,7 @@
             // Базовый цвет
             ctx.fillStyle = '#8a8378';
             ctx.fillRect(0, 0, w, h);
-            
+
             // 1. Добавляем мелкий шум (зернистость камня)
             for (let i = 0; i < 4000; i++) {
                 const x = Math.random() * w;
@@ -522,7 +522,7 @@
                 ctx.fillStyle = Math.random() > 0.5 ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
                 ctx.fillRect(x, y, size, size);
             }
-            
+
             // 2. Добавляем трещины
             ctx.strokeStyle = 'rgba(40, 35, 30, 0.4)';
             ctx.lineWidth = 1.5;
@@ -568,7 +568,7 @@
             bumpScale: 0.05,
             roughness: 0.9,
             flatShading: true,
-            emissive: new THREE.Color(0x222222), 
+            emissive: new THREE.Color(0x222222),
             emissiveIntensity: 1.0
         });
 
@@ -580,7 +580,7 @@
             bumpScale: 0.05,
             roughness: 0.9,
             flatShading: true,
-            emissive: new THREE.Color(0x222222), 
+            emissive: new THREE.Color(0x222222),
             emissiveIntensity: 1.0
         });
 
@@ -653,7 +653,11 @@
         scene.add(mineGroup);
 
         // --- 5.6. Дополнительные штольни на склонах ---
-        const aditLabels = ['Штольня 13', 'Штольня 27', 'Штольня 41'];
+        const aditConfigs = [
+            { label: 'Штольня 13', url: 'data/shtolnya13.html' },
+            { label: 'Штольня 27', url: 'data/shtolnya27.html' },
+            { label: 'Штольня 41', url: 'data/shtolnya41.html' }
+        ];
         const allMineGroups = [mineGroup];
         const aditPositions = [{ x: mineX, z: mineZ }];
 
@@ -788,15 +792,18 @@
         // ровно на то место, где она была, остальные генерируем как обычно.
         let pendingSavedAdit = (savedAdit && !savedAdit.isMain) ? savedAdit : null;
 
-        aditLabels.forEach(label => {
+        aditConfigs.forEach(cfg => {
             let pos = null;
-            let useLabel = label;
+            let useLabel = cfg.label;
+            let useUrl = cfg.url;
 
             if (pendingSavedAdit) {
                 const s = pendingSavedAdit;
                 pendingSavedAdit = null;
                 if (isFinite(s.x) && isFinite(s.z) && isFinite(s.angle)) {
-                    useLabel = s.label || label;
+                    useLabel = s.label || cfg.label;
+                    // Если из localStorage пришёл url — восстанавливаем именно эту штольню
+                    if (s.url) useUrl = s.url;
                     pos = {
                         x: s.x,
                         z: s.z,
@@ -808,15 +815,15 @@
 
             if (!pos) pos = findAditPosition(aditPositions);
 
-            const adit = createAdit(useLabel, pos.x, pos.y, pos.z, pos.angle);
+            // Передаём useUrl — теперь каждая штольня ведёт в свой файл
+            const adit = createAdit(useLabel, pos.x, pos.y, pos.z, pos.angle, useUrl);
             scene.add(adit);
             allMineGroups.push(adit);
             aditPositions.push({ x: pos.x, z: pos.z });
         });
 
-
         // --- 5.7. Разрушенные бетонные конструкции ---
-        const ruinGeo = new THREE.BoxGeometry(1, 1, 1);        
+        const ruinGeo = new THREE.BoxGeometry(1, 1, 1);
 
         const ruinMat = new THREE.MeshStandardMaterial({
             color: 0xffffff, // Ставим белый, чтобы цвет брался из текстуры
@@ -838,7 +845,7 @@
         let placedRuins = 0;
 
         // Добавляем множитель размера (например, 2.5 — увеличит всё в 2.5 раза)
-        const RUIN_SCALE = 3.5; 
+        const RUIN_SCALE = 3.5;
 
         function applyRuinTransform(x, z, h) {
             const type = Math.random();
@@ -880,15 +887,15 @@
 
             // ВАЖНО: позиция по Y должна считаться ПОСЛЕ применения масштаба,
             // чтобы объект правильно стоял на земле (h + половина высоты)
-            // Я также немного увеличил "утопление" в землю (- 1.0 вместо - 0.5), 
+            // Я также немного увеличил "утопление" в землю (- 1.0 вместо - 0.5),
             // чтобы массивные обломки не казались парящими на склонах.
             ruinDummy.position.set(x, h + sy / 2 - 1.0, z);
-            
+
             ruinDummy.rotation.set(tiltX, Math.random() * Math.PI * 2, tiltZ);
             ruinDummy.scale.set(sx, sy, sz);
             ruinDummy.updateMatrix();
             ruins.setMatrixAt(placedRuins, ruinDummy.matrix);
-            
+
             placedRuins++;
         }
 
@@ -925,7 +932,7 @@
                 const roadR = roadRadii[idx];
                 if (Math.abs(r - roadR) < 60) continue;
 
-                // Кластер найден — генерируем обломки                
+                // Кластер найден — генерируем обломки
                 const ruinsBefore = placedRuins;
                 addRuinCluster(cx, cz, 30 + Math.floor(Math.random() * 25));
                 if (placedRuins > ruinsBefore) {
@@ -1243,7 +1250,7 @@
         // --- Звук счётчика Гейгера ---
         function playGeigerClick() {
             if (!audioCtx || audioCtx.state === 'suspended') return;
-            
+
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
 
@@ -1412,7 +1419,7 @@
 
                 // --- Логика радиации ---
                 let closestDistToZone = Infinity;
-                
+
                 // Находим ближайшую зону (вычитая её радиус, чтобы считать дистанцию до края)
                 for (const rz of radZones) {
                     const dx = camera.position.x - rz.x;
@@ -1424,16 +1431,16 @@
                 // Если мы близко к зоне (начинаем трещать за 150 метров до её границы)
                 if (closestDistToZone < 150) {
                     // t = 1 (далеко), t = 0 (внутри зоны)
-                    const t = Math.max(0, closestDistToZone / 150); 
-                    
+                    const t = Math.max(0, closestDistToZone / 150);
+
                     // Интервал между щелчками: от 0.05 сек (очень часто) до 1.5 сек (редко)
                     const baseInterval = 0.1 + t * 1.6; // 0.1с вблизи, 1.6с на пороге
-                    
+
                     geigerTimer -= delta;
                     if (geigerTimer <= 0) {
                         playGeigerClick();
                         // Добавляем случайность, чтобы треск был хаотичным, как у настоящего прибора
-                        geigerTimer = baseInterval * (0.6 + Math.random() * 0.8); 
+                        geigerTimer = baseInterval * (0.6 + Math.random() * 0.8);
                     }
                 } else {
                     geigerTimer = 0; // Сбрасываем таймер, если вышли из опасной зоны
