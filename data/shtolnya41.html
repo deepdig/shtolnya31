@@ -86,6 +86,7 @@
   }
   .btn:hover { background: #3d8a3d; transform: scale(1.03); }
   .btn:active { transform: scale(0.98); }
+  .btn[disabled] { opacity: 0.5; cursor: default; }
   .keys { margin-top: 18px; font-size: 13px; color: #8f9a8f; line-height: 1.9; }
   .keys b { color: #cfe8cf; font-weight: 600; }
   #deadStats { font-size: 15px; color: #e0c040; margin-top: 6px; font-variant-numeric: tabular-nums; line-height: 1.7; }
@@ -135,7 +136,7 @@
   <div class="keys">
     <b>W A S D / стрелки</b> — движение &nbsp;·&nbsp; <b>Мышь</b> — осмотр &nbsp;·&nbsp; <b>Пробел</b> — прыжок &nbsp;·&nbsp; <b>Shift</b> — бег
   </div>
-  <button id="btnStart" class="btn">НАЧАТЬ</button>
+  <button id="btnStart" class="btn" disabled>ЗАГРУЗКА...</button>
 </div>
 
 <div id="overlayDead" class="overlay hidden">
@@ -147,12 +148,17 @@
 </div>
 
 <script src="js/three.min.js"></script>
+<script src="dungeon.js"></script>
 <script>
 (function () {
   "use strict";
 
-  var WORLD_W = 96, WORLD_H = 72, WORLD_D = 96;
+  // ============================================================
+  //  КОНФИГУРАЦИЯ (заполняется из dungeon.js)
+  // ============================================================
+  var CONFIG = null;
 
+  var WORLD_W = 96, WORLD_H = 72, WORLD_D = 96;
   var PLAYER_RADIUS = 0.32;
   var PLAYER_HEIGHT = 1.7;
   var PLAYER_EYE = 1.6;
@@ -165,23 +171,39 @@
   var DOSE_CRITICAL = 100;
   var DOSE_FACTOR = 0.0022;
   var RECOVER_RATE = 3.0;
-  var JITTER = 0.02;
+  var RAD_BASE = 0.15;
+  var RAD_PER_M = 0.04;
+  var RAD_RECOVER_THRESHOLD = 0.8;
   var ORE_PICKUP_RADIUS = 1.5;
   var ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
-
+  var ORE_MAX_ITEMS = 90;
   var TUNNEL_HEIGHT = 3;
-  var MAIN_FLOOR_W = 2.8, MAIN_CEIL_W = 2.0;
-  var BRANCH_FLOOR_W = 2.2, BRANCH_CEIL_W = 1.5;
-  var SHAFT_SIZE = 2;
+  var CENTER_X = 48, CENTER_Z = 48;
+  var ENTRANCE_Y = 64;
+  var JITTER = 0.02;
 
-  var NUM_LEVELS = 5;
-  var LEVEL_SPACING = 12;
-  var TOP_FLOOR_Y = 64;
-  var ENTRANCE_Y = TOP_FLOOR_Y;
+  var grid = null;
+  var sources = [];
+  var signRequests = [];
+  var railSegments = [];
+  var cartPlacements = [];
+  var startPos = null;
 
-  var CENTER_X = Math.floor(WORLD_W / 2);
-  var CENTER_Z = Math.floor(WORLD_D / 2);
+  var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null, ladderMesh = null;
+  var concreteTex = null;
+  var stoneMat, uranMat, crystalMat, railMat, ladderMat;
 
+  var PLAYER = {
+    pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+    yaw: 0, pitch: 0, onGround: false, onLadder: false, dose: 0, maxDepth: 0
+  };
+  var keys = {};
+  var gameState = "menu";
+  var gameTime = 0;
+
+  // ============================================================
+  //  Сцена
+  // ============================================================
   var canvas = document.getElementById("game");
   var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -208,26 +230,105 @@
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
-  function makeConcreteTexture() {
-    var size = 128;
+  // ============================================================
+  //  Загрузка конфигурации
+  // ============================================================
+  function loadDungeon(url) {
+    // 1) Если dungeon.js подключён через <script> — используем его.
+    //    Это работает и в file:// (без сервера), и в http://.
+    if (window.DUNGEON_CONFIG) {
+      return Promise.resolve(window.DUNGEON_CONFIG);
+    }
+    // 2) Иначе — пробуем fetch (актуально только для http://).
+    return fetch(url, { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status + " — не удалось прочитать " + url);
+      return r.json();
+    });
+  }
+
+  function applyConfig(cfg) {
+    CONFIG = cfg;
+
+    var w = cfg.world;
+    WORLD_W = w.size.x;
+    WORLD_H = w.size.y;
+    WORLD_D = w.size.z;
+    TUNNEL_HEIGHT = w.tunnelHeight;
+    CENTER_X = Math.floor(WORLD_W / 2);
+    CENTER_Z = Math.floor(WORLD_D / 2);
+
+    var ph = cfg.physics;
+    PLAYER_RADIUS = ph.playerRadius;
+    PLAYER_HEIGHT = ph.playerHeight;
+    PLAYER_EYE = ph.playerEye;
+    STEP_HEIGHT = ph.stepHeight;
+    WALK_SPEED = ph.walkSpeed;
+    RUN_SPEED = ph.runSpeed;
+    GRAVITY = ph.gravity;
+    JUMP_VEL = ph.jumpVelocity;
+    CLIMB_SPEED = ph.climbSpeed;
+
+    var rad = cfg.radiation;
+    DOSE_CRITICAL = rad.criticalDose;
+    DOSE_FACTOR = rad.doseFactor;
+    RECOVER_RATE = rad.recoverRate;
+    RAD_BASE = rad.backgroundBase;
+    RAD_PER_M = rad.backgroundPerMeter;
+    RAD_RECOVER_THRESHOLD = rad.recoverThreshold;
+
+    ORE_PICKUP_RADIUS = cfg.ore.pickupRadius;
+    ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
+    ORE_MAX_ITEMS = cfg.ore.maxItems || 90;
+
+    ENTRANCE_Y = cfg.levels[0].y;
+  }
+
+  function buildMaterials(cfg) {
+    concreteTex = makeConcreteTexture(cfg.textures.concrete.params);
+    var m = cfg.materials;
+    stoneMat = new THREE.MeshLambertMaterial({ map: concreteTex, vertexColors: true, side: THREE.DoubleSide });
+    uranMat = new THREE.MeshLambertMaterial({
+      map: concreteTex,
+      color: new THREE.Color(m.uranium.color),
+      emissive: new THREE.Color(m.uranium.emissive),
+      emissiveIntensity: m.uranium.emissiveIntensity,
+      vertexColors: true, side: THREE.DoubleSide
+    });
+    crystalMat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color(m.crystal.color),
+      emissive: new THREE.Color(m.crystal.emissive),
+      emissiveIntensity: m.crystal.emissiveIntensity,
+      vertexColors: true
+    });
+    railMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    ladderMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  }
+
+  // ============================================================
+  //  Процедурная текстура (параметризованная)
+  // ============================================================
+  function makeConcreteTexture(p) {
+    var size = p.size || 128;
     var cv = document.createElement("canvas");
     cv.width = cv.height = size;
     var ctx = cv.getContext("2d");
-    ctx.fillStyle = "#8a8781";
+    ctx.fillStyle = p.baseColor || "#8a8781";
     ctx.fillRect(0, 0, size, size);
-    for (var i = 0; i < 4200; i++) {
-      var v = Math.random() * 46 - 23;
-      var c = Math.round(120 + v);
+    var nVar = p.noiseVariance || 46;
+    var base = 120;
+    for (var i = 0; i < (p.noiseCount || 4200); i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(base + v);
       ctx.fillStyle = "rgba(" + c + "," + c + "," + (c - 6) + ",0.35)";
       ctx.fillRect(Math.random() * size, Math.random() * size, 1.2, 1.2);
     }
-    ctx.strokeStyle = "rgba(38,34,28,0.75)";
-    ctx.lineWidth = 5;
+    ctx.strokeStyle = p.edgeColor || "rgba(38,34,28,0.75)";
+    ctx.lineWidth = p.edgeWidth || 5;
     ctx.strokeRect(2.5, 2.5, size - 5, size - 5);
-    ctx.strokeStyle = "rgba(190,186,178,0.35)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = p.innerEdgeColor || "rgba(190,186,178,0.35)";
+    ctx.lineWidth = p.innerEdgeWidth || 1.5;
     ctx.strokeRect(6, 6, size - 12, size - 12);
-    for (var k = 0; k < 5; k++) {
+    for (var k = 0; k < (p.stainCount || 5); k++) {
       var x0 = Math.random() * size;
       var wdt = 2 + Math.random() * 5;
       var len = size * (0.25 + Math.random() * 0.65);
@@ -237,7 +338,7 @@
       ctx.fillStyle = grad;
       ctx.fillRect(x0, 0, wdt, len);
     }
-    for (var p = 0; p < 22; p++) {
+    for (var pi = 0; pi < (p.pitCount || 22); pi++) {
       ctx.fillStyle = "rgba(52,48,44,0.45)";
       ctx.beginPath();
       ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 2.2, 0, Math.PI * 2);
@@ -249,14 +350,9 @@
     return tex;
   }
 
-  var concreteTex = makeConcreteTexture();
-
-  var stoneMat = new THREE.MeshLambertMaterial({ map: concreteTex, vertexColors: true, side: THREE.DoubleSide });
-  var uranMat = new THREE.MeshLambertMaterial({ map: concreteTex, color: 0x9ec49a, emissive: 0x1e5c1e, emissiveIntensity: 0.85, vertexColors: true, side: THREE.DoubleSide });
-  var crystalMat = new THREE.MeshLambertMaterial({ color: 0x123a16, emissive: 0x59ff7d, emissiveIntensity: 1.0, vertexColors: true });
-  var railMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  var ladderMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-
+  // ============================================================
+  //  Утилиты
+  // ============================================================
   function hash3(x, y, z, s) {
     var n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^
             Math.imul(z | 0, 1274126177) ^ Math.imul(s | 0, 2246822519);
@@ -265,31 +361,24 @@
     return (n >>> 0) / 4294967295;
   }
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
-  var grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
-  var sources = [];
-  var signRequests = [];
-  var railSegments = [];
-  var cartPlacements = [];
-
   function gIdx(x, y, z) { return x + WORLD_W * (y + WORLD_H * z); }
-
   function isLadder(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return false;
     return grid[gIdx(x, y, z)] === 3;
   }
-
   function solidAt(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return true;
     var v = grid[gIdx(x, y, z)];
     return v === 1 || v === 2;
   }
-
   function setAir(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return;
     grid[gIdx(x, y, z)] = 0;
   }
 
+  // ============================================================
+  //  Вырезание в воксельной сетке
+  // ============================================================
   function carveTrapezoidX(x0, x1, zc, yFloor, floorW, ceilW, height) {
     var xMin = Math.floor(Math.min(x0, x1)), xMax = Math.ceil(Math.max(x0, x1));
     for (var x = xMin; x <= xMax; x++) {
@@ -345,7 +434,6 @@
       setAir(x0, y, z1); setAir(x1, y, z1);
     }
   }
-
   function carveShaft(cx, cz, yTop, yBot, size, withLadder) {
     var half = Math.floor(size / 2);
     carveBoxAir(cx - half, yBot, cz - half, cx + half, yTop, cz + half);
@@ -359,33 +447,21 @@
       }
     }
   }
-
-  function placeUranium(x, y, z, depthMeters) {
-    var ang = Math.random() * Math.PI * 2;
-    var ccx = x + Math.cos(ang) * 2.4;
-    var ccy = y;
-    var ccz = z + Math.sin(ang) * 2.4;
-    var r = 1.0 + Math.random() * (0.6 + depthMeters * 0.035);
-    var count = 0, sumX = 0, sumY = 0, sumZ = 0;
-    var x0 = Math.floor(ccx - r), x1 = Math.ceil(ccx + r);
-    var y0 = Math.floor(ccy - r), y1 = Math.ceil(ccy + r);
-    var z0 = Math.floor(ccz - r), z1 = Math.ceil(ccz + r);
-    for (var ix = x0; ix <= x1; ix++) for (var iy = y0; iy <= y1; iy++) for (var iz = z0; iz <= z1; iz++) {
-      if (ix < 0 || ix >= WORLD_W || iy < 0 || iy >= WORLD_H || iz < 0 || iz >= WORLD_D) continue;
-      var dx = ix - ccx, dy = iy - ccy, dz = iz - ccz;
+  function carveOreSphere(cx, cy, cz, r) {
+    var count = 0;
+    var x0 = Math.floor(cx - r), x1 = Math.ceil(cx + r);
+    var y0 = Math.floor(cy - r), y1 = Math.ceil(cy + r);
+    var z0 = Math.floor(cz - r), z1 = Math.ceil(cz + r);
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
+      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
+      var dx = x + 0.5 - cx, dy = y + 0.5 - cy, dz = z + 0.5 - cz;
       if (dx * dx + dy * dy + dz * dz > r * r) continue;
-      if (grid[gIdx(ix, iy, iz)] === 1) {
-        grid[gIdx(ix, iy, iz)] = 2;
-        sumX += ix + 0.5; sumY += iy + 0.5; sumZ += iz + 0.5;
+      if (grid[gIdx(x, y, z)] === 1) {
+        grid[gIdx(x, y, z)] = 2;
         count++;
       }
     }
-    if (count > 0) {
-      sources.push({
-        x: sumX / count, y: sumY / count, z: sumZ / count,
-        strength: 1300 + Math.random() * 700
-      });
-    }
+    return count;
   }
 
   function findFloorY(x, z, fromY) {
@@ -426,150 +502,120 @@
     }
   }
 
-  function addDeadEnd(yFloor, cx, cz) {
-    var len = 5 + Math.floor(Math.random() * 6);
-    var dir = Math.random() < 0.5 ? -1 : 1;
-    var onX = Math.random() < 0.5;
-    if (onX) {
-      var x = 24 + Math.floor(Math.random() * (WORLD_W - 48));
-      var z1 = clamp(cz + dir * len, 4, WORLD_D - 4);
-      carveTrapezoidZ(cz, z1, x, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
-      placeUranium(x, yFloor + 1, z1, ENTRANCE_Y - yFloor);
-      signRequests.push({ x: x, y: yFloor + 2, z: cz + dir * 2, text: "Забой", faceX: 0, faceZ: -dir });
-    } else {
-      var z = 24 + Math.floor(Math.random() * (WORLD_D - 48));
-      var x1 = clamp(cx + dir * len, 4, WORLD_W - 4);
-      carveTrapezoidX(cx, x1, z, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
-      placeUranium(x1, yFloor + 1, z, ENTRANCE_Y - yFloor);
-      signRequests.push({ x: cx + dir * 2, y: yFloor + 2, z: z, text: "Забой", faceX: -dir, faceZ: 0 });
-    }
-  }
-
-  function addRoom(yFloor, cx, cz) {
-    var names = ["Насосная камера", "Электроподстанция", "Диспетчерская",
-                 "Медпункт", "Склад ГСМ", "Компрессорная", "Венткамера",
-                 "Камера ожидания", "Зарядная камера", "Ремонтный участок"];
-    var name = names[(Math.random() * names.length) | 0];
-    var onX = Math.random() < 0.5;
-    var rcx, rcz, w, d, h = 4;
-    if (onX) {
-      rcx = 26 + Math.floor(Math.random() * (WORLD_W - 52));
-      rcz = clamp(cz + (Math.random() < 0.5 ? -6 : 6), 5, WORLD_D - 5);
-      w = 4 + Math.floor(Math.random() * 4);
-      d = 4 + Math.floor(Math.random() * 4);
-      carveRoom(rcx, rcz, yFloor, w, d, h);
-      carveTrapezoidZ(cz, rcz, rcx, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
-    } else {
-      rcz = 26 + Math.floor(Math.random() * (WORLD_D - 52));
-      rcx = clamp(cx + (Math.random() < 0.5 ? -6 : 6), 5, WORLD_W - 5);
-      w = 4 + Math.floor(Math.random() * 4);
-      d = 4 + Math.floor(Math.random() * 4);
-      carveRoom(rcx, rcz, yFloor, w, d, h);
-      carveTrapezoidX(cx, rcx, rcz, yFloor, BRANCH_FLOOR_W, BRANCH_CEIL_W, TUNNEL_HEIGHT);
-    }
-    signRequests.push({
-      x: rcx, y: yFloor + 2, z: rcz, text: name,
-      faceX: onX ? 0 : (rcx > cx ? 1 : -1),
-      faceZ: onX ? (rcz > cz ? 1 : -1) : 0
-    });
-    if (Math.random() < 0.55) {
-      var wx = rcx + (Math.random() < 0.5 ? -1 : 1) * (Math.floor(w / 2) + 1);
-      var wz = rcz + (Math.random() < 0.5 ? -1 : 1) * (Math.floor(d / 2) + 1);
-      placeUranium(wx, yFloor + 1, wz, ENTRANCE_Y - yFloor);
-    }
-  }
-
-  function carveLevel(li, yFloor) {
-    var th = TUNNEL_HEIGHT;
-    var xA = 10, xB = WORLD_W - 10;
-    var zA = 10, zB = WORLD_D - 10;
-    var pA = 24, pB = WORLD_W - 24, pC = WORLD_D - 24;
-    var drifts = [
-      { t: 'X', x0: xA, x1: xB, zc: CENTER_Z },
-      { t: 'Z', z0: zA, z1: zB, xc: CENTER_X },
-      { t: 'X', x0: pA, x1: pB, zc: pA },
-      { t: 'X', x0: pA, x1: pB, zc: pC },
-      { t: 'Z', z0: pA, z1: pC, xc: pA },
-      { t: 'Z', z0: pA, z1: pC, xc: pB }
-    ];
-    for (var i = 0; i < drifts.length; i++) {
-      var dr = drifts[i];
-      if (dr.t === 'X') {
-        carveTrapezoidX(dr.x0, dr.x1, dr.zc, yFloor, MAIN_FLOOR_W, MAIN_CEIL_W, th);
-        addRails(dr.x0, dr.zc, dr.x1, dr.zc, yFloor);
-      } else {
-        carveTrapezoidZ(dr.z0, dr.z1, dr.xc, yFloor, MAIN_FLOOR_W, MAIN_CEIL_W, th);
-        addRails(dr.xc, dr.z0, dr.xc, dr.z1, yFloor);
-      }
-    }
-    var junctions = [
-      [CENTER_X, CENTER_Z], [pA, pA], [pB, pA], [pA, pC], [pB, pC],
-      [CENTER_X, pA], [CENTER_X, pC], [pA, CENTER_Z], [pB, CENTER_Z]
-    ];
-    for (var j = 0; j < junctions.length; j++) {
-      carveJunction(junctions[j][0], yFloor, junctions[j][1], MAIN_FLOOR_W, th);
-    }
-    var roomsCount = 3 + Math.floor(Math.random() * 3);
-    for (var r = 0; r < roomsCount; r++) addRoom(yFloor, CENTER_X, CENTER_Z);
-    var deadCount = 3 + Math.floor(Math.random() * 3);
-    for (var d = 0; d < deadCount; d++) addDeadEnd(yFloor, CENTER_X, CENTER_Z);
-    if (Math.random() < 0.7) {
-      var jp = junctions[(Math.random() * junctions.length) | 0];
-      placeUranium(jp[0] + (Math.random() - 0.5) * 4, yFloor + 1, jp[1] + (Math.random() - 0.5) * 4, ENTRANCE_Y - yFloor);
-    }
-    signRequests.push({ x: CENTER_X + 2, y: yFloor + 2, z: CENTER_Z, text: "Горизонт " + (-li * LEVEL_SPACING) + " м", faceX: 1, faceZ: 0 });
-    var cartCount = 2 + Math.floor(Math.random() * 3);
-    for (var c = 0; c < cartCount; c++) {
-      if (Math.random() < 0.5) {
-        var cxx = 20 + Math.floor(Math.random() * (WORLD_W - 40));
-        cartPlacements.push({ x: cxx + 0.5, y: yFloor, z: CENTER_Z + 0.5, yaw: 0 });
-      } else {
-        var czz = 20 + Math.floor(Math.random() * (WORLD_D - 40));
-        cartPlacements.push({ x: CENTER_X + 0.5, y: yFloor, z: czz + 0.5, yaw: Math.PI / 2 });
-      }
-    }
-  }
-
-  function generateMine() {
+  // ============================================================
+  //  Построение мира из конфигурации
+  // ============================================================
+  function buildWorld(cfg) {
+    grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
     grid.fill(1);
     sources.length = 0;
     signRequests.length = 0;
     railSegments.length = 0;
     cartPlacements.length = 0;
 
-    var levels = [];
-    for (var li = 0; li < NUM_LEVELS; li++) levels.push(TOP_FLOOR_Y - li * LEVEL_SPACING);
+    var levelY = {}, levelName = {};
+    for (var i = 0; i < cfg.levels.length; i++) {
+      levelY[cfg.levels[i].id] = cfg.levels[i].y;
+      levelName[cfg.levels[i].id] = cfg.levels[i].name;
+    }
+    ENTRANCE_Y = cfg.levels[0].y;
 
-    for (var lv = 0; lv < NUM_LEVELS; lv++) carveLevel(lv, levels[lv]);
-
-    for (var s = 0; s < NUM_LEVELS - 1; s++) {
-      var yTop = levels[s];
-      var yBot = levels[s + 1];
-      var shaftCount = 1 + (Math.random() < 0.55 ? 1 : 0);
-      for (var k = 0; k < shaftCount; k++) {
-        var sx, sz;
-        if (Math.random() < 0.5) {
-          sx = 26 + Math.floor(Math.random() * (WORLD_W - 52));
-          sz = CENTER_Z;
-          if (Math.abs(sx - CENTER_X) < 5) sx += 8;
-        } else {
-          sx = CENTER_X;
-          sz = 26 + Math.floor(Math.random() * (WORLD_D - 52));
-          if (Math.abs(sz - CENTER_Z) < 5) sz += 8;
-        }
-        var hasLadder = (k === 0) || (Math.random() < 0.4);
-        carveShaft(sx, sz, yTop, yBot, SHAFT_SIZE, hasLadder);
-        signRequests.push({
-          x: sx, y: yTop + 2, z: sz,
-          text: hasLadder ? ("Шахта " + (s + 1) + " — лестница") : ("Шахта " + (s + 1) + " — ОСТОРОЖНО"),
-          faceX: 1, faceZ: 0
-        });
-        if (Math.random() < 0.6) placeUranium(sx + 2, yBot + 1, sz, ENTRANCE_Y - yBot);
+    // --- Туннели ---
+    for (var ti = 0; ti < cfg.tunnels.length; ti++) {
+      var t = cfg.tunnels[ti];
+      var ty = levelY[t.level];
+      var st = cfg.world.tunnelStyles[t.style || "main"];
+      var dx = Math.abs(t.to[0] - t.from[0]);
+      var dz = Math.abs(t.to[1] - t.from[1]);
+      if (dx >= dz) {
+        carveTrapezoidX(t.from[0], t.to[0], t.from[1], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        if (t.rails) addRails(t.from[0], t.from[1], t.to[0], t.from[1], ty);
+      } else {
+        carveTrapezoidZ(t.from[1], t.to[1], t.from[0], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        if (t.rails) addRails(t.from[0], t.from[1], t.from[0], t.to[1], ty);
       }
     }
-    return { x: CENTER_X, y: levels[0], z: CENTER_Z, yaw: Math.PI * 0.25 };
+
+    // --- Перекрёстки ---
+    for (var ji = 0; ji < cfg.junctions.length; ji++) {
+      var j = cfg.junctions[ji];
+      var js = cfg.world.tunnelStyles[j.style || "main"];
+      carveJunction(j.at[0], levelY[j.level], j.at[1], js.floorWidth, TUNNEL_HEIGHT);
+    }
+
+    // --- Камеры ---
+    for (var ri = 0; ri < cfg.rooms.length; ri++) {
+      var r = cfg.rooms[ri];
+      var ry = levelY[r.level];
+      carveRoom(Math.round(r.center[0]), Math.round(r.center[1]), ry, r.size[0], r.size[1], r.height || 4);
+      if (r.name) {
+        signRequests.push({
+          x: r.center[0], y: ry + 2, z: r.center[1],
+          text: r.name, faceX: 1, faceZ: 0
+        });
+      }
+    }
+
+    // --- Шахты ---
+    for (var si = 0; si < cfg.shafts.length; si++) {
+      var s = cfg.shafts[si];
+      var yTop = levelY[s.fromLevel];
+      var yBot = levelY[s.toLevel];
+      carveShaft(Math.round(s.at[0]), Math.round(s.at[1]), yTop, yBot, cfg.world.shaftSize, !!s.withLadder);
+      if (s.label) {
+        signRequests.push({
+          x: s.at[0], y: yTop + 2, z: s.at[1],
+          text: s.label, faceX: 1, faceZ: 0
+        });
+      }
+    }
+
+    // --- Руда (урановые вкрапления) ---
+    for (var oi = 0; oi < cfg.oreSources.length; oi++) {
+      var o = cfg.oreSources[oi];
+      var oy = levelY[o.level] + 1;
+      var placed = carveOreSphere(o.at[0], oy, o.at[1], o.radius || 1.2);
+      if (placed > 0) {
+        sources.push({
+          x: o.at[0] + 0.5, y: oy + 0.5, z: o.at[1] + 0.5,
+          strength: o.strength || 1600
+        });
+      }
+    }
+
+    // --- Явные таблички ---
+    if (cfg.signs) {
+      for (var sgi = 0; sgi < cfg.signs.length; sgi++) {
+        var sg = cfg.signs[sgi];
+        signRequests.push({
+          x: sg.at[0], y: levelY[sg.level] + (sg.height || 2), z: sg.at[1],
+          text: sg.text,
+          faceX: sg.face ? sg.face[0] : 1,
+          faceZ: sg.face ? sg.face[1] : 0
+        });
+      }
+    }
+
+    // --- Вагонетки ---
+    for (var ci = 0; ci < cfg.carts.length; ci++) {
+      var c = cfg.carts[ci];
+      cartPlacements.push({
+        x: c.at[0], y: levelY[c.level], z: c.at[1],
+        yaw: c.yaw || 0, ore: !!c.ore
+      });
+    }
+
+    // --- Старт ---
+    var st0 = cfg.start;
+    startPos = {
+      x: st0.at[0], y: levelY[st0.level], z: st0.at[1],
+      yaw: st0.yaw || 0
+    };
   }
 
+  // ============================================================
+  //  Геометрия мира (воксели + кристаллы)
+  // ============================================================
   var FACES = [
     { n: [ 1, 0, 0], c: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
     { n: [-1, 0, 0], c: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
@@ -615,8 +661,6 @@
       idxArr.push(base,base+1,base+2);
     }
   }
-
-  var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null, ladderMesh = null;
 
   function buildGeometry() {
     var sp=[], sn=[], su=[], si=[], sc=[];
@@ -721,8 +765,8 @@
       var s = railSegments[i];
       addBox(s.cx, s.cy, s.cz, s.sx, s.sy, s.sz, s.r, s.g, s.b);
     }
-    if (railMesh) { scene.remove(railMesh); railMesh.geometry.dispose(); }
-    if (pos.length === 0) { railMesh = null; return; }
+    if (railMesh) { scene.remove(railMesh); railMesh.geometry.dispose(); railMesh = null; }
+    if (pos.length === 0) return;
     var geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
@@ -735,7 +779,6 @@
 
   function buildLadderGeometry() {
     var pos = [], nor = [], col = [], idx = [];
-
     function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
       for (var f = 0; f < 6; f++) {
         var face = FACES[f];
@@ -749,7 +792,6 @@
         idx.push(base, base+1, base+2, base, base+2, base+3);
       }
     }
-
     for (var y = 0; y < WORLD_H; y++) {
       for (var z = 0; z < WORLD_D; z++) {
         for (var x = 0; x < WORLD_W; x++) {
@@ -798,9 +840,8 @@
         }
       }
     }
-
-    if (ladderMesh) { scene.remove(ladderMesh); ladderMesh.geometry.dispose(); }
-    if (pos.length === 0) { ladderMesh = null; return; }
+    if (ladderMesh) { scene.remove(ladderMesh); ladderMesh.geometry.dispose(); ladderMesh = null; }
+    if (pos.length === 0) return;
     var geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
@@ -811,6 +852,9 @@
     scene.add(ladderMesh);
   }
 
+  // ============================================================
+  //  Таблички
+  // ============================================================
   var signGroup = null;
   var signTextures = {};
   var SIGN_W = 1.5, SIGN_H = 0.4;
@@ -970,11 +1014,11 @@
     oreItems.length = 0;
     oreCollected = 0;
     for (var i = 0; i < sources.length; i++) {
-      if (oreItems.length >= 90) break;
+      if (oreItems.length >= ORE_MAX_ITEMS) break;
       var s = sources[i];
       var count = 1 + ((Math.random() * 3) | 0);
       for (var c = 0; c < count; c++) {
-        if (oreItems.length >= 90) break;
+        if (oreItems.length >= ORE_MAX_ITEMS) break;
         var ang = Math.random() * Math.PI * 2;
         var dist = 1.6 + Math.random() * 2.4;
         var px = s.x + Math.cos(ang) * dist;
@@ -1029,7 +1073,7 @@
     };
     for (var c = 0; c < cartPlacements.length; c++) {
       var cp = cartPlacements[c];
-      var cart = makeCart(Math.random() < 0.5, mats);
+      var cart = makeCart(cp.ore, mats);
       cart.position.set(cp.x, cp.y, cp.z);
       cart.rotation.y = cp.yaw;
       cartGroup.add(cart);
@@ -1038,30 +1082,25 @@
   }
 
   var SURFACE_URL = "../index.html";
-  var startPos = null;
+  var ceilingExit = null;
 
   function buildCeilingExit() {
+    if (ceilingExit) { scene.remove(ceilingExit); }
     var geom = new THREE.PlaneGeometry(5, 5);
     var mat = new THREE.MeshBasicMaterial({ color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-    var mesh = new THREE.Mesh(geom, mat);
-    mesh.rotation.x = Math.PI / 2;
-    mesh.position.set(CENTER_X + 0.5, TOP_FLOOR_Y + TUNNEL_HEIGHT - 0.1, CENTER_Z + 0.5);
-    mesh.name = "ceilingExit";
-    scene.add(mesh);
+    ceilingExit = new THREE.Mesh(geom, mat);
+    ceilingExit.rotation.x = Math.PI / 2;
+    ceilingExit.position.set(CENTER_X + 0.5, ENTRANCE_Y + TUNNEL_HEIGHT - 0.1, CENTER_Z + 0.5);
+    ceilingExit.name = "ceilingExit";
+    scene.add(ceilingExit);
     var glow = new THREE.PointLight(0xd8ffd8, 1.4, 12);
-    glow.position.set(mesh.position.x, mesh.position.y - 0.5, mesh.position.z);
+    glow.position.set(ceilingExit.position.x, ceilingExit.position.y - 0.5, ceilingExit.position.z);
     scene.add(glow);
-    return mesh;
   }
 
-  var PLAYER = {
-    pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-    yaw: 0, pitch: 0, onGround: false, onLadder: false, dose: 0, maxDepth: 0
-  };
-  var keys = {};
-  var gameState = "menu";
-  var gameTime = 0;
-
+  // ============================================================
+  //  Ввод
+  // ============================================================
   window.addEventListener("keydown", function (e) { keys[e.code] = true; if (e.code === "Space") e.preventDefault(); });
   window.addEventListener("keyup", function (e) { keys[e.code] = false; });
 
@@ -1083,6 +1122,9 @@
     if (gameState === "playing" && document.pointerLockElement !== canvas) canvas.requestPointerLock();
   });
 
+  // ============================================================
+  //  Звук
+  // ============================================================
   var audioCtx = null, clickBuf = null, clickTimer = 0, clickInterval = 1.2, humNodes = null;
 
   function startHum() {
@@ -1167,6 +1209,9 @@
     osc.start(now); osc.stop(now + 0.25);
   }
 
+  // ============================================================
+  //  Мини-карта
+  // ============================================================
   var MAP_R = 13, MAP_W = 190, TILE_W = 7, TILE_H = 3.6, H_SCALE = 2.8, SKIRT = 3.2;
   var mapCanvas = document.getElementById("minimap");
   var mapCtx = mapCanvas.getContext("2d");
@@ -1265,9 +1310,12 @@
     mapCtx.strokeRect(0.5, 0.5, W - 1, H - 1);
   }
 
+  // ============================================================
+  //  Радиация и физика
+  // ============================================================
   function computeRadiation(px, py, pz) {
     var depthMeters = Math.max(0, ENTRANCE_Y - py);
-    var level = 0.15 + depthMeters * 0.04;
+    var level = RAD_BASE + depthMeters * RAD_PER_M;
     for (var i = 0; i < sources.length; i++) {
       var s = sources[i];
       var dx = px - s.x, dy = py - s.y, dz = pz - s.z;
@@ -1301,13 +1349,10 @@
     p[axis] += dist;
     if (!collides(p.x, p.y, p.z)) return;
     p[axis] -= dist;
-
-    // Пока игрок держится за лестницу — не пытаемся «перешагнуть» стену ствола.
     if (PLAYER.onLadder) {
       PLAYER.vel[axis] = 0;
       return;
     }
-
     var savedY = p.y;
     p.y += STEP_HEIGHT;
     p[axis] += dist;
@@ -1336,14 +1381,12 @@
     var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
     var rightX = Math.cos(PLAYER.yaw), rightZ = -Math.sin(PLAYER.yaw);
 
-    // Ввод
     var fwd = 0, strafe = 0;
     if (keys.KeyW || keys.ArrowUp) fwd += 1;
     if (keys.KeyS || keys.ArrowDown) fwd -= 1;
     if (keys.KeyD || keys.ArrowRight) strafe += 1;
     if (keys.KeyA || keys.ArrowLeft) strafe -= 1;
 
-    // Детект лестницы
     var onLadderCell = detectLadderInBox(p);
     if (PLAYER.onLadder) {
       if (!onLadderCell) PLAYER.onLadder = false;
@@ -1354,12 +1397,10 @@
       }
     }
 
-    // Логика лазания
     if (PLAYER.onLadder) {
       var climbDir = 0;
       if (keys.KeyW || keys.ArrowUp) climbDir += 1;
       if (keys.KeyS || keys.ArrowDown) climbDir -= 1;
-
       if (climbDir !== 0) {
         var nextY = p.y + climbDir * CLIMB_SPEED * dt;
         var nextFeetCell = Math.floor(nextY + 0.1);
@@ -1367,19 +1408,15 @@
         var feetZ = Math.floor(p.z);
         if (isLadder(feetX, nextFeetCell, feetZ)) {
           PLAYER.vel.y = climbDir * CLIMB_SPEED;
-          // ВАЖНО: пока лезем — W/S не двигают горизонтально
           fwd = 0;
         } else {
           PLAYER.vel.y = 0;
-          // Дошли до края лестницы — W/S теперь работают как ходьба,
-          // чтобы можно было сойти вбок или выйти в туннель.
         }
       } else {
         PLAYER.vel.y = 0;
       }
     }
 
-    // Горизонтальная скорость
     var speed = (keys.ShiftLeft || keys.ShiftRight) ? RUN_SPEED : WALK_SPEED;
     if (fwd !== 0 || strafe !== 0) {
       var inv = 1 / Math.sqrt(fwd * fwd + strafe * strafe);
@@ -1391,10 +1428,8 @@
       PLAYER.vel.z = 0;
     }
 
-    // Гравитация / прыжок
     var wasOnGround = PLAYER.onGround;
     PLAYER.onGround = false;
-
     if (!PLAYER.onLadder) {
       if (keys.Space && wasOnGround) {
         PLAYER.vel.y = JUMP_VEL;
@@ -1408,7 +1443,6 @@
     tryMove("y", PLAYER.vel.y * dt);
     tryMove("z", PLAYER.vel.z * dt);
 
-    // Индикация
     var ch = document.getElementById("crosshair");
     if (ch) {
       if (PLAYER.onLadder) {
@@ -1425,7 +1459,6 @@
       else lh.classList.remove("show");
     }
 
-    // Сбор руды
     for (var oi = 0; oi < oreItems.length; oi++) {
       var it = oreItems[oi];
       if (it.collected) continue;
@@ -1444,7 +1477,7 @@
     }
 
     var level = computeRadiation(p.x, p.y, p.z);
-    if (level > 0.8) PLAYER.dose += level * DOSE_FACTOR * dt;
+    if (level > RAD_RECOVER_THRESHOLD) PLAYER.dose += level * DOSE_FACTOR * dt;
     else PLAYER.dose = Math.max(0, PLAYER.dose - RECOVER_RATE * dt);
     var depth = Math.max(0, ENTRANCE_Y - p.y);
     if (depth > PLAYER.maxDepth) PLAYER.maxDepth = depth;
@@ -1536,6 +1569,7 @@
   }
 
   function startGame() {
+    if (!startPos) return;
     initAudio();
     document.getElementById("overlayStart").classList.add("hidden");
     document.getElementById("overlayDead").classList.add("hidden");
@@ -1548,20 +1582,12 @@
   document.getElementById("btnStart").addEventListener("click", startGame);
   document.getElementById("btnRestart").addEventListener("click", startGame);
 
-  startPos = generateMine();
-  buildGeometry();
-  buildRailGeometry();
-  buildLadderGeometry();
-  buildDecor();
-  buildOrePickups();
-
-  var ceilingExit = buildCeilingExit();
-
   var _exitRay = new THREE.Raycaster();
   var _screenCenter = new THREE.Vector2(0, 0);
 
   canvas.addEventListener("mousedown", function () {
     if (gameState !== "playing" || document.pointerLockElement !== canvas) return;
+    if (!ceilingExit) return;
     _exitRay.setFromCamera(_screenCenter, camera);
     var hits = _exitRay.intersectObject(ceilingExit, false);
     if (hits.length > 0 && hits[0].distance < 25) {
@@ -1570,11 +1596,9 @@
     }
   });
 
-  resetGame(startPos);
-  camera.position.set(PLAYER.pos.x, PLAYER.pos.y + PLAYER_EYE, PLAYER.pos.z);
-  camera.rotation.y = PLAYER.yaw;
-  camera.rotation.x = PLAYER.pitch;
-
+  // ============================================================
+  //  Асинхронная инициализация
+  // ============================================================
   var clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
@@ -1585,7 +1609,41 @@
     }
     renderer.render(scene, camera);
   }
-  animate();
+
+  function showLoadError(err) {
+    var ov = document.getElementById("overlayStart");
+    ov.innerHTML =
+      '<h1 style="color:#e05540">ОШИБКА</h1>' +
+      '<p>Не удалось загрузить конфигурацию подземелья.</p>' +
+      '<p style="color:#e0a040; font-family:monospace">' + (err && err.message ? err.message : String(err)) + '</p>' +
+      '<p>Проверьте, что рядом с этим HTML-файлом лежит <b>dungeon.js</b> ' +
+      'и в нём есть <b>window.DUNGEON_CONFIG</b>.</p>' +
+      '<p style="font-size:12px;color:#8f9a8f">Вариант с <b>dungeon.json</b> работает только ' +
+      'при запуске через HTTP-сервер.</p>';
+  }
+
+  loadDungeon("dungeon.json").then(function (cfg) {
+    applyConfig(cfg);
+    buildMaterials(cfg);
+    buildWorld(cfg);
+    buildGeometry();
+    buildRailGeometry();
+    buildLadderGeometry();
+    buildDecor();
+    buildOrePickups();
+    buildCeilingExit();
+    resetGame(startPos);
+    camera.position.set(PLAYER.pos.x, PLAYER.pos.y + PLAYER_EYE, PLAYER.pos.z);
+    camera.rotation.y = PLAYER.yaw;
+    camera.rotation.x = PLAYER.pitch;
+
+    var btn = document.getElementById("btnStart");
+    btn.disabled = false;
+    btn.textContent = "НАЧАТЬ";
+
+    animate();
+  }).catch(showLoadError);
+
 })();
 </script>
 </body>

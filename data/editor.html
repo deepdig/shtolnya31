@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Штольня — Редактор подземелья</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1c1a; color: #d8d8c8; font-family: "Segoe UI", Arial, sans-serif; user-select: none; }
+  body { display: flex; flex-direction: column; }
+
+  #topbar { background: #252825; padding: 8px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid #3a3f3a; }
+  #levelTabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; padding-bottom: 2px; }
+  .levelTab {
+    padding: 5px 12px; background: #2f3530; border: 1px solid #4a554a; border-radius: 4px;
+    cursor: pointer; color: #b0bdb0; font-size: 12px; white-space: nowrap; line-height: 1.2;
+  }
+  .levelTab:hover:not(.active) { background: #3a453a; }
+  .levelTab.active { background: #4a7a4a; color: #e8ffe8; border-color: #6aa06a; }
+  .levelTab .depth { font-size: 10px; color: #8fa08f; margin-top: 1px; }
+  .levelTab.active .depth { color: #c0e8c0; }
+
+  #main { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+  #toolbar {
+    width: 152px; background: #222520; padding: 8px; overflow-y: auto;
+    border-right: 1px solid #3a3f3a; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
+  }
+  #toolbar .section { font-size: 10px; color: #6a756a; padding: 2px 2px 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .toolBtn {
+    padding: 8px 10px; background: #2f3530; border: 1px solid #4a554a; border-radius: 4px;
+    cursor: pointer; color: #b0bdb0; font-size: 12px; text-align: left;
+  }
+  .toolBtn:hover { background: #3a453a; }
+  .toolBtn.active { background: #4a7a4a; color: #e8ffe8; border-color: #6aa06a; }
+
+  #canvasWrap { flex: 1; position: relative; overflow: hidden; background: #0a0c0a; min-width: 0; }
+  #editor { display: block; cursor: crosshair; }
+
+  #props {
+    width: 300px; background: #222520; padding: 10px; overflow-y: auto;
+    border-left: 1px solid #3a3f3a; flex-shrink: 0;
+  }
+  #props h3 { font-size: 13px; color: #8fc78f; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #3a3f3a; }
+  #props h3:not(:first-child) { margin-top: 14px; }
+  #props .hint { font-size: 12px; color: #6a756a; font-style: italic; line-height: 1.4; }
+  .field { margin-bottom: 8px; }
+  .field label { display: block; font-size: 11px; color: #8fa08f; margin-bottom: 2px; }
+  .field input[type="text"], .field input[type="number"], .field select {
+    width: 100%; padding: 4px 6px; background: #1a1c1a; border: 1px solid #3a403a;
+    color: #d0d8d0; border-radius: 3px; font-size: 12px; font-family: inherit;
+  }
+  .field .row { display: flex; gap: 4px; }
+  .field .row input { flex: 1; min-width: 0; }
+  .field input[type="checkbox"] { margin-right: 6px; }
+
+  #bottombar {
+    background: #252825; padding: 8px; display: flex; gap: 6px; align-items: center;
+    border-top: 1px solid #3a3f3a; flex-wrap: wrap;
+  }
+  .btn {
+    padding: 7px 14px; background: #2f6f2f; color: #e8ffe8; border: 1px solid #55a055;
+    border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;
+  }
+  .btn:hover { background: #3d8a3d; }
+  .btn.secondary { background: #2f3530; color: #b0bdb0; border-color: #4a554a; }
+  .btn.secondary:hover { background: #3a453a; }
+  .btn.danger { background: #6f2f2f; border-color: #a05555; color: #ffe8e8; }
+  .btn.danger:hover { background: #8a3d3d; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  #status { margin-left: auto; font-size: 12px; color: #8fa08f; }
+
+  .helpTip {
+    position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.72);
+    padding: 6px 10px; border-radius: 4px; font-size: 11px; color: #8fa08f;
+    pointer-events: none; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="levelTabs"></div>
+  <button class="btn secondary" id="btnAddLevel">+ Уровень</button>
+  <button class="btn secondary" id="btnDelLevel">− Уровень</button>
+</div>
+
+<div id="main">
+  <div id="toolbar">
+    <div class="section">Инструменты</div>
+    <button class="toolBtn active" data-tool="select">↖ Выбор</button>
+    <button class="toolBtn" data-tool="tunnel">═ Туннель</button>
+    <button class="toolBtn" data-tool="junction">✚ Перекрёсток</button>
+    <button class="toolBtn" data-tool="room">▭ Камера</button>
+    <button class="toolBtn" data-tool="shaft">⇕ Шахта</button>
+    <button class="toolBtn" data-tool="ore">◆ Руда</button>
+    <button class="toolBtn" data-tool="cart">⬛ Вагонетка</button>
+    <button class="toolBtn" data-tool="start">▶ Старт</button>
+  </div>
+
+  <div id="canvasWrap">
+    <canvas id="editor"></canvas>
+    <div class="helpTip">
+      <b>ЛКМ</b> — выбрать / создать &nbsp;·&nbsp; <b>ПКМ/СКМ</b> — панорама<br>
+      <b>Колесо</b> — зум &nbsp;·&nbsp; <b>Delete</b> — удалить &nbsp;·&nbsp; <b>Esc</b> — отмена
+    </div>
+  </div>
+
+  <div id="props"></div>
+</div>
+
+<div id="bottombar">
+  <button class="btn" id="btnSave">💾 Сохранить dungeon.js</button>
+  <button class="btn secondary" id="btnLoadFile">📂 Загрузить…</button>
+  <input type="file" id="fileInput" accept=".js,.json,.txt" style="display:none">
+  <button class="btn secondary" id="btnExportJson">📄 Экспорт JSON</button>
+  <span id="status">Готово</span>
+</div>
+
+<script src="dungeon.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================
+  //  Загрузка / инициализация конфигурации
+  // ============================================================
+  function defaultConfig() {
+    return {
+      "$schema": "shtolnya-dungeon-v1",
+      "version": 1,
+      "name": "Новая шахта",
+      "world": {
+        "size": { "x": 96, "y": 72, "z": 96 },
+        "tunnelHeight": 3,
+        "tunnelStyles": {
+          "main": { "floorWidth": 2.8, "ceilWidth": 2.0 },
+          "branch": { "floorWidth": 2.2, "ceilWidth": 1.5 }
+        },
+        "shaftSize": 2
+      },
+      "physics": {
+        "playerRadius": 0.32, "playerHeight": 1.7, "playerEye": 1.6,
+        "stepHeight": 1.05, "walkSpeed": 4.2, "runSpeed": 7.0,
+        "gravity": 20, "jumpVelocity": 8.5, "climbSpeed": 3.2
+      },
+      "radiation": {
+        "criticalDose": 100, "doseFactor": 0.0022, "recoverRate": 3.0,
+        "backgroundBase": 0.15, "backgroundPerMeter": 0.04, "recoverThreshold": 0.8
+      },
+      "ore": { "pickupRadius": 1.5, "maxItems": 90 },
+      "textures": {
+        "concrete": { "generator": "concrete", "params": { "size": 128, "baseColor": "#8a8781", "noiseCount": 4200, "noiseVariance": 46, "pitCount": 22, "stainCount": 5 } }
+      },
+      "materials": {
+        "uranium": { "color": "#9ec49a", "emissive": "#1e5c1e", "emissiveIntensity": 0.85 },
+        "crystal": { "color": "#123a16", "emissive": "#59ff7d", "emissiveIntensity": 1.0 }
+      },
+      "levels": [{ "id": 0, "y": 64, "name": "Горизонт 0" }],
+      "start": { "level": 0, "at": [48, 48], "yaw": 0 },
+      "tunnels": [], "junctions": [], "rooms": [], "shafts": [], "oreSources": [], "carts": []
+    };
+  }
+
+  var cfg = window.DUNGEON_CONFIG
+    ? JSON.parse(JSON.stringify(window.DUNGEON_CONFIG))
+    : defaultConfig();
+
+  ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+    if (!Array.isArray(cfg[k])) cfg[k] = [];
+  });
+  if (!Array.isArray(cfg.levels) || cfg.levels.length === 0) {
+    cfg.levels = [{ id: 0, y: 64, name: "Горизонт 0" }];
+  }
+  if (!cfg.world) cfg.world = defaultConfig().world;
+  if (!cfg.world.tunnelStyles) cfg.world.tunnelStyles = defaultConfig().world.tunnelStyles;
+  if (!cfg.start) cfg.start = { level: cfg.levels[0].id, at: [cfg.world.size.x / 2, cfg.world.size.z / 2], yaw: 0 };
+
+  // ============================================================
+  //  Состояние редактора
+  // ============================================================
+  var currentLevelId = cfg.levels[0].id;
+  var tool = 'select';
+  var selected = null;          // { type, obj, arrayName }
+  var view = { scale: 6, ox: 0, oy: 0 };
+  var drag = null;
+  var pendingTunnel = null;
+  var isPanning = false;
+  var panStart = null;
+  var statusTimer = 0;
+
+  var canvas = document.getElementById('editor');
+  var ctx = canvas.getContext('2d');
+  var wrap = document.getElementById('canvasWrap');
+  var statusEl = document.getElementById('status');
+  var propsEl = document.getElementById('props');
+
+  // ============================================================
+  //  Утилиты
+  // ============================================================
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function findLevelById(id) {
+    for (var i = 0; i < cfg.levels.length; i++) if (cfg.levels[i].id === id) return cfg.levels[i];
+    return null;
+  }
+  function nextId(prefix) {
+    var maxN = -1;
+    var re = new RegExp('^' + prefix + '(\\d+)$');
+    ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+      cfg[k].forEach(function (el) {
+        if (el.id) {
+          var m = String(el.id).match(re);
+          if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+        }
+      });
+    });
+    return prefix + (maxN + 1);
+  }
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? '#e05540' : '#8fc78f';
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(function () {
+      statusEl.textContent = 'Готово';
+      statusEl.style.color = '#8fa08f';
+    }, 3500);
+  }
+
+  // ============================================================
+  //  Табы уровней
+  // ============================================================
+  function renderLevelTabs() {
+    var el = document.getElementById('levelTabs');
+    el.innerHTML = '';
+    cfg.levels.forEach(function (lv) {
+      var tab = document.createElement('div');
+      tab.className = 'levelTab' + (lv.id === currentLevelId ? ' active' : '');
+      tab.innerHTML = '<div>' + esc(lv.name || ('Уровень ' + lv.id)) + '</div>' +
+                      '<div class="depth">Y=' + esc(lv.y) + ' · id=' + esc(lv.id) + '</div>';
+      tab.addEventListener('click', function () {
+        currentLevelId = lv.id;
+        selected = null;
+        pendingTunnel = null;
+        renderLevelTabs();
+        renderProps();
+        redraw();
+      });
+      el.appendChild(tab);
+    });
+  }
+
+  // ============================================================
+  //  Размер canvas / view
+  // ============================================================
+  function resizeCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = wrap.clientWidth, h = wrap.clientHeight;
+    canvas.width = Math.max(1, w * dpr);
+    canvas.height = Math.max(1, h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redraw();
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function fitView() {
+    var w = cfg.world.size.x, d = cfg.world.size.z;
+    var cw = wrap.clientWidth, ch = wrap.clientHeight;
+    var s = Math.min(cw / w, ch / d) * 0.92;
+    view.scale = s;
+    view.ox = (cw - w * s) / 2;
+    view.oy = (ch - d * s) / 2;
+  }
+
+  function worldToScreen(x, z) {
+    return { x: view.ox + x * view.scale, y: view.oy + z * view.scale };
+  }
+  function screenToWorld(sx, sy) {
+    return { x: (sx - view.ox) / view.scale, z: (sy - view.oy) / view.scale };
+  }
+
+  // ============================================================
+  //  Рисование
+  // ============================================================
+  function redraw() {
+    var cw = wrap.clientWidth, ch = wrap.clientHeight;
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Фон-шахматка
+    ctx.fillStyle = '#0e100e';
+    ctx.fillRect(0, 0, cw, ch);
+
+    var w = cfg.world.size.x, d = cfg.world.size.z;
+    var tl = worldToScreen(0, 0);
+    var br = worldToScreen(w, d);
+
+    // Сетка
+    ctx.strokeStyle = 'rgba(80,100,80,0.18)';
+    ctx.lineWidth = 1;
+    var step = 4;
+    for (var gx = 0; gx <= w; gx += step) {
+      var sp = worldToScreen(gx, 0);
+      ctx.beginPath(); ctx.moveTo(sp.x, tl.y); ctx.lineTo(sp.x, br.y); ctx.stroke();
+    }
+    for (var gz = 0; gz <= d; gz += step) {
+      var sp2 = worldToScreen(0, gz);
+      ctx.beginPath(); ctx.moveTo(tl.x, sp2.y); ctx.lineTo(br.x, sp2.y); ctx.stroke();
+    }
+
+    // Оси
+    ctx.strokeStyle = 'rgba(120,180,120,0.28)';
+    ctx.lineWidth = 1.4;
+    var c = worldToScreen(w / 2, d / 2);
+    ctx.beginPath(); ctx.moveTo(tl.x, c.y); ctx.lineTo(br.x, c.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(c.x, tl.y); ctx.lineTo(c.x, br.y); ctx.stroke();
+
+    // Граница мира
+    ctx.strokeStyle = '#4a7a4a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+
+    // Подписи координат
+    ctx.fillStyle = 'rgba(140,170,140,0.55)';
+    ctx.font = '9px monospace';
+    for (var tx = 0; tx <= w; tx += 8) {
+      var p = worldToScreen(tx, 0);
+      ctx.fillText(tx.toString(), p.x + 2, tl.y - 3);
+    }
+    for (var tz = 0; tz <= d; tz += 8) {
+      var p2 = worldToScreen(0, tz);
+      ctx.fillText(tz.toString(), tl.x - 16, p2.y + 3);
+    }
+
+    // ---- Элементы ----
+
+    // Туннели
+    cfg.tunnels.forEach(function (t) {
+      if (t.level !== currentLevelId) return;
+      var a = worldToScreen(t.from[0], t.from[1]);
+      var b = worldToScreen(t.to[0], t.to[1]);
+      var st = cfg.world.tunnelStyles[t.style || 'main'] || cfg.world.tunnelStyles.main;
+      var wpx = Math.max(3, st.floorWidth * view.scale);
+      ctx.strokeStyle = 'rgba(90,140,90,0.62)';
+      ctx.lineWidth = wpx; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      if (t.rails) {
+        ctx.strokeStyle = 'rgba(220,190,80,0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = '#7ad07a';
+      ctx.beginPath(); ctx.arc(a.x, a.y, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Перекрёстки
+    cfg.junctions.forEach(function (j) {
+      if (j.level !== currentLevelId) return;
+      var p = worldToScreen(j.at[0], j.at[1]);
+      var st = cfg.world.tunnelStyles[j.style || 'main'] || cfg.world.tunnelStyles.main;
+      var r = Math.max(4, st.floorWidth * view.scale / 2);
+      ctx.fillStyle = 'rgba(110,170,110,0.72)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Камеры
+    cfg.rooms.forEach(function (r) {
+      if (r.level !== currentLevelId) return;
+      var a = worldToScreen(r.center[0] - r.size[0] / 2, r.center[1] - r.size[1] / 2);
+      var b = worldToScreen(r.center[0] + r.size[0] / 2, r.center[1] + r.size[1] / 2);
+      ctx.fillStyle = 'rgba(110,130,180,0.4)';
+      ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      ctx.strokeStyle = 'rgba(140,170,220,0.9)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      if (r.name) {
+        ctx.fillStyle = '#c0d8ff';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(r.name, (a.x + b.x) / 2, a.y - 4);
+        ctx.textAlign = 'left';
+      }
+    });
+
+    // Шахты
+    cfg.shafts.forEach(function (s) {
+      if (s.fromLevel !== currentLevelId && s.toLevel !== currentLevelId) return;
+      var p = worldToScreen(s.at[0], s.at[1]);
+      var size = Math.max(6, (cfg.world.shaftSize || 2) * view.scale);
+      ctx.fillStyle = s.withLadder ? 'rgba(220,200,80,0.5)' : 'rgba(200,90,80,0.5)';
+      ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
+      ctx.strokeStyle = s.withLadder ? '#e8d060' : '#e05540';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.x - size / 2, p.y - size / 2, size, size);
+      ctx.fillStyle = s.withLadder ? '#e8d060' : '#e05540';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(s.withLadder ? '≡' : '!', p.x, p.y);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    });
+
+    // Руда
+    cfg.oreSources.forEach(function (o) {
+      if (o.level !== currentLevelId) return;
+      var p = worldToScreen(o.at[0], o.at[1]);
+      var r = Math.max(6, (o.radius || 1.2) * view.scale);
+      var grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      grad.addColorStop(0, 'rgba(80,255,100,0.85)');
+      grad.addColorStop(1, 'rgba(80,255,100,0.08)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#64ff6e';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.4, 0, Math.PI * 2); ctx.stroke();
+    });
+
+    // Вагонетки
+    cfg.carts.forEach(function (c) {
+      if (c.level !== currentLevelId) return;
+      var p = worldToScreen(c.at[0], c.at[1]);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(-(c.yaw || 0));
+      var ww = Math.max(8, 1.1 * view.scale), hh = Math.max(5, 0.72 * view.scale);
+      ctx.fillStyle = c.ore ? 'rgba(100,180,100,0.85)' : 'rgba(120,120,120,0.85)';
+      ctx.fillRect(-ww / 2, -hh / 2, ww, hh);
+      ctx.strokeStyle = c.ore ? '#7fff8a' : '#aaa';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-ww / 2, -hh / 2, ww, hh);
+      ctx.restore();
+    });
+
+    // Старт
+    if (cfg.start && cfg.start.level === currentLevelId) {
+      var p = worldToScreen(cfg.start.at[0], cfg.start.at[1]);
+      ctx.fillStyle = '#ffd76a';
+      ctx.beginPath();
+      ctx.moveTo(p.x + 9, p.y);
+      ctx.lineTo(p.x - 5, p.y - 6);
+      ctx.lineTo(p.x - 5, p.y + 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
+      var ang = -(cfg.start.yaw || 0);
+      ctx.strokeStyle = 'rgba(255,215,106,0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + Math.cos(ang) * 24, p.y + Math.sin(ang) * 24);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Выделение
+    if (selected && selected.obj) {
+      ctx.save();
+      ctx.strokeStyle = '#ffff00';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      var obj = selected.obj;
+      if (selected.type === 'tunnel') {
+        var a = worldToScreen(obj.from[0], obj.from[1]);
+        var b = worldToScreen(obj.to[0], obj.to[1]);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      } else if (selected.type === 'room') {
+        var a2 = worldToScreen(obj.center[0] - obj.size[0] / 2, obj.center[1] - obj.size[1] / 2);
+        var b2 = worldToScreen(obj.center[0] + obj.size[0] / 2, obj.center[1] + obj.size[1] / 2);
+        ctx.strokeRect(a2.x - 3, a2.y - 3, (b2.x - a2.x) + 6, (b2.y - a2.y) + 6);
+      } else if (selected.type === 'shaft') {
+        var p3 = worldToScreen(obj.at[0], obj.at[1]);
+        var sz = Math.max(6, (cfg.world.shaftSize || 2) * view.scale);
+        ctx.strokeRect(p3.x - sz / 2 - 4, p3.y - sz / 2 - 4, sz + 8, sz + 8);
+      } else if (selected.type === 'start') {
+        var p4 = worldToScreen(obj.at[0], obj.at[1]);
+        ctx.beginPath(); ctx.arc(p4.x, p4.y, 16, 0, Math.PI * 2); ctx.stroke();
+      } else if (obj.at) {
+        var p5 = worldToScreen(obj.at[0], obj.at[1]);
+        ctx.beginPath(); ctx.arc(p5.x, p5.y, 14, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Превью туннеля
+    if (pendingTunnel && tool === 'tunnel') {
+      var a3 = worldToScreen(pendingTunnel.from[0], pendingTunnel.from[1]);
+      var b3 = worldToScreen(pendingTunnel.to[0], pendingTunnel.to[1]);
+      ctx.strokeStyle = 'rgba(150,255,150,0.75)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(a3.x, a3.y); ctx.lineTo(b3.x, b3.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Заголовок уровня
+    var lv = findLevelById(currentLevelId);
+    if (lv) {
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(10, 10, 220, 44);
+      ctx.fillStyle = '#c0e8c0';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(lv.name || ('Уровень ' + lv.id), 20, 30);
+      ctx.fillStyle = '#8fa08f';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('Y=' + lv.y + '   id=' + lv.id, 20, 48);
+    }
+  }
+
+  // ============================================================
+  //  Hit-testing
+  // ============================================================
+  function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+    var t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    var cx = x1 + t * dx, cy = y1 + t * dy;
+    return Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+  }
+
+  function hitTest(wx, wz) {
+    var best = null, bestDist = Infinity;
+    var TH = 2.0;
+
+    if (cfg.start && cfg.start.level === currentLevelId) {
+      var d0 = Math.sqrt(Math.pow(wx - cfg.start.at[0], 2) + Math.pow(wz - cfg.start.at[1], 2));
+      if (d0 < TH * 1.4 && d0 < bestDist) {
+        bestDist = d0;
+        best = { type: 'start', obj: cfg.start, arrayName: null };
+      }
+    }
+    cfg.carts.forEach(function (c) {
+      if (c.level !== currentLevelId) return;
+      var dd = Math.sqrt(Math.pow(wx - c.at[0], 2) + Math.pow(wz - c.at[1], 2));
+      if (dd < TH && dd < bestDist) { bestDist = dd; best = { type: 'cart', obj: c, arrayName: 'carts' }; }
+    });
+    cfg.oreSources.forEach(function (o) {
+      if (o.level !== currentLevelId) return;
+      var dd = Math.sqrt(Math.pow(wx - o.at[0], 2) + Math.pow(wz - o.at[1], 2));
+      if (dd < Math.max(TH, (o.radius || 1.2) * 0.7) && dd < bestDist) {
+        bestDist = dd; best = { type: 'ore', obj: o, arrayName: 'oreSources' };
+      }
+    });
+    cfg.rooms.forEach(function (r) {
+      if (r.level !== currentLevelId) return;
+      var dx = Math.abs(wx - r.center[0]), dz = Math.abs(wz - r.center[1]);
+      if (dx <= r.size[0] / 2 && dz <= r.size[1] / 2) {
+        var dd = Math.max(dx, dz);
+        if (dd < bestDist) { bestDist = dd; best = { type: 'room', obj: r, arrayName: 'rooms' }; }
+      }
+    });
+    cfg.shafts.forEach(function (s) {
+      if (s.fromLevel !== currentLevelId && s.toLevel !== currentLevelId) return;
+      var dd = Math.sqrt(Math.pow(wx - s.at[0], 2) + Math.pow(wz - s.at[1], 2));
+      if (dd < TH && dd < bestDist) { bestDist = dd; best = { type: 'shaft', obj: s, arrayName: 'shafts' }; }
+    });
+    cfg.junctions.forEach(function (j) {
+      if (j.level !== currentLevelId) return;
+      var dd = Math.sqrt(Math.pow(wx - j.at[0], 2) + Math.pow(wz - j.at[1], 2));
+      if (dd < TH && dd < bestDist) { bestDist = dd; best = { type: 'junction', obj: j, arrayName: 'junctions' }; }
+    });
+    cfg.tunnels.forEach(function (t) {
+      if (t.level !== currentLevelId) return;
+      var st = cfg.world.tunnelStyles[t.style || 'main'] || cfg.world.tunnelStyles.main;
+      var dd = pointToSegmentDist(wx, wz, t.from[0], t.from[1], t.to[0], t.to[1]);
+      if (dd < Math.max(TH, st.floorWidth / 2) && dd < bestDist) {
+        bestDist = dd; best = { type: 'tunnel', obj: t, arrayName: 'tunnels' };
+      }
+    });
+    return best;
+  }
+
+  // ============================================================
+  //  Мышь
+  // ============================================================
+  function getMouseWorld(e) {
+    var rect = canvas.getBoundingClientRect();
+    var sx = e.clientX - rect.left;
+    var sy = e.clientY - rect.top;
+    return screenToWorld(sx, sy);
+  }
+
+  canvas.addEventListener('mousedown', function (e) {
+    var w = getMouseWorld(e);
+
+    if (e.button === 1 || e.button === 2) {
+      isPanning = true;
+      panStart = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+      e.preventDefault();
+      return;
+    }
+    if (e.button !== 0) return;
+
+    if (tool === 'select') {
+      var hit = hitTest(w.x, w.z);
+      selected = hit;
+      if (hit) {
+        drag = { startW: w, original: JSON.parse(JSON.stringify(hit.obj)), type: hit.type };
+      }
+      renderProps();
+      redraw();
+    }
+    else if (tool === 'tunnel') {
+      if (!pendingTunnel) {
+        pendingTunnel = { from: [Math.round(w.x), Math.round(w.z)], to: [Math.round(w.x), Math.round(w.z)] };
+        redraw();
+      } else {
+        var from = pendingTunnel.from;
+        var to = [Math.round(w.x), Math.round(w.z)];
+        if (from[0] !== to[0] || from[1] !== to[1]) {
+          var newT = { id: nextId('t'), level: currentLevelId, style: 'main', rails: true, from: from, to: to };
+          cfg.tunnels.push(newT);
+          selected = { type: 'tunnel', obj: newT, arrayName: 'tunnels' };
+          renderProps();
+        }
+        pendingTunnel = null;
+        redraw();
+      }
+    }
+    else if (tool === 'junction') {
+      var j = { id: nextId('j'), level: currentLevelId, at: [Math.round(w.x), Math.round(w.z)], style: 'main' };
+      cfg.junctions.push(j);
+      selected = { type: 'junction', obj: j, arrayName: 'junctions' };
+      renderProps(); redraw();
+    }
+    else if (tool === 'room') {
+      var r = { id: nextId('r'), level: currentLevelId, center: [Math.round(w.x), Math.round(w.z)], size: [6, 6], height: 4, name: 'Новая камера' };
+      cfg.rooms.push(r);
+      selected = { type: 'room', obj: r, arrayName: 'rooms' };
+      renderProps(); redraw();
+    }
+    else if (tool === 'shaft') {
+      var curIdx = -1;
+      for (var i = 0; i < cfg.levels.length; i++) if (cfg.levels[i].id === currentLevelId) { curIdx = i; break; }
+      var toId = (curIdx >= 0 && curIdx + 1 < cfg.levels.length) ? cfg.levels[curIdx + 1].id : currentLevelId;
+      var s = {
+        id: nextId('sh'), fromLevel: currentLevelId, toLevel: toId,
+        at: [Math.round(w.x), Math.round(w.z)], withLadder: true, label: 'Новая шахта'
+      };
+      cfg.shafts.push(s);
+      selected = { type: 'shaft', obj: s, arrayName: 'shafts' };
+      renderProps(); redraw();
+    }
+    else if (tool === 'ore') {
+      var o = { id: nextId('o'), level: currentLevelId, at: [Math.round(w.x), Math.round(w.z)], radius: 1.5, strength: 1600 };
+      cfg.oreSources.push(o);
+      selected = { type: 'ore', obj: o, arrayName: 'oreSources' };
+      renderProps(); redraw();
+    }
+    else if (tool === 'cart') {
+      var c = { id: nextId('c'), level: currentLevelId, at: [Math.round(w.x) + 0.5, Math.round(w.z) + 0.5], yaw: 0, ore: false };
+      cfg.carts.push(c);
+      selected = { type: 'cart', obj: c, arrayName: 'carts' };
+      renderProps(); redraw();
+    }
+    else if (tool === 'start') {
+      cfg.start.level = currentLevelId;
+      cfg.start.at = [Math.round(w.x), Math.round(w.z)];
+      selected = { type: 'start', obj: cfg.start, arrayName: null };
+      renderProps(); redraw();
+    }
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    if (isPanning) {
+      view.ox = panStart.ox + (e.clientX - panStart.x);
+      view.oy = panStart.oy + (e.clientY - panStart.y);
+      redraw();
+      return;
+    }
+    if (drag && selected) {
+      var w = getMouseWorld(e);
+      var dxw = w.x - drag.startW.x, dzw = w.z - drag.startW.z;
+      var obj = drag.original;
+      if (drag.type === 'tunnel') {
+        var dFrom = Math.hypot(drag.startW.x - obj.from[0], drag.startW.z - obj.from[1]);
+        var dTo = Math.hypot(drag.startW.x - obj.to[0], drag.startW.z - obj.to[1]);
+        if (dTo < dFrom) selected.obj.to = [Math.round(obj.to[0] + dxw), Math.round(obj.to[1] + dzw)];
+        else selected.obj.from = [Math.round(obj.from[0] + dxw), Math.round(obj.from[1] + dzw)];
+      } else if (drag.type === 'room') {
+        selected.obj.center = [Math.round(obj.center[0] + dxw), Math.round(obj.center[1] + dzw)];
+      } else if (drag.type === 'start') {
+        selected.obj.at = [Math.round(obj.at[0] + dxw), Math.round(obj.at[1] + dzw)];
+      } else if (obj.at) {
+        selected.obj.at = [Math.round(obj.at[0] + dxw), Math.round(obj.at[1] + dzw)];
+      }
+      renderProps();
+      redraw();
+      return;
+    }
+    if (tool === 'tunnel' && pendingTunnel) {
+      var w2 = getMouseWorld(e);
+      pendingTunnel.to = [Math.round(w2.x), Math.round(w2.z)];
+      redraw();
+    }
+  });
+
+  canvas.addEventListener('mouseup', function () {
+    isPanning = false;
+    drag = null;
+  });
+  canvas.addEventListener('mouseleave', function () {
+    isPanning = false;
+    drag = null;
+  });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var before = screenToWorld(mx, my);
+    var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    view.scale = Math.max(2, Math.min(40, view.scale * factor));
+    var after = screenToWorld(mx, my);
+    view.ox += (after.x - before.x) * view.scale;
+    view.oy += (after.z - before.z) * view.scale;
+    redraw();
+  }, { passive: false });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selected && selected.arrayName) {
+        var arr = cfg[selected.arrayName];
+        var idx = -1;
+        for (var i = 0; i < arr.length; i++) if (arr[i] === selected.obj) { idx = i; break; }
+        if (idx >= 0) arr.splice(idx, 1);
+        selected = null;
+        renderProps(); redraw();
+        e.preventDefault();
+      }
+    }
+    if (e.key === 'Escape') {
+      pendingTunnel = null;
+      selected = null;
+      renderProps(); redraw();
+    }
+  });
+
+  // ============================================================
+  //  Инструменты
+  // ============================================================
+  document.querySelectorAll('.toolBtn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.toolBtn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      tool = btn.getAttribute('data-tool');
+      pendingTunnel = null;
+      redraw();
+    });
+  });
+
+  // ============================================================
+  //  Панель свойств
+  // ============================================================
+  function renderProps() {
+    var html = '';
+    var lv = findLevelById(currentLevelId);
+
+    // Секция «Текущий уровень»
+    if (lv) {
+      html += '<h3>Текущий уровень</h3>';
+      html += '<div class="field"><label>Название</label>' +
+              '<input type="text" data-ctx="level" data-key="name" value="' + esc(lv.name) + '"></div>';
+      html += '<div class="field"><label>Высота Y</label>' +
+              '<input type="number" data-ctx="level" data-key="y" data-kind="int" value="' + esc(lv.y) + '" step="1"></div>';
+    }
+
+    if (!selected) {
+      html += '<p class="hint" style="margin-top:14px;">Выберите элемент на карте или используйте инструмент для создания нового.</p>';
+      propsEl.innerHTML = html;
+      bindLevelInputs(lv);
+      return;
+    }
+
+    var obj = selected.obj;
+    html += '<h3>' + labelForType(selected.type) +
+            (obj.id ? ' <span style="color:#6a756a;font-size:11px;">' + esc(obj.id) + '</span>' : '') + '</h3>';
+    html += renderFieldsFor(selected.type, obj);
+    if (selected.arrayName) {
+      html += '<button class="btn danger" id="btnDelSel" style="width:100%;margin-top:10px;">Удалить элемент</button>';
+    }
+    propsEl.innerHTML = html;
+
+    bindLevelInputs(lv);
+    bindObjectInputs(obj);
+
+    var delBtn = propsEl.querySelector('#btnDelSel');
+    if (delBtn) {
+      delBtn.addEventListener('click', function () {
+        if (!selected || !selected.arrayName) return;
+        var arr = cfg[selected.arrayName];
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i] === selected.obj) { arr.splice(i, 1); break; }
+        }
+        selected = null;
+        renderProps(); redraw();
+      });
+    }
+  }
+
+  function bindLevelInputs(lv) {
+    if (!lv) return;
+    propsEl.querySelectorAll('[data-ctx="level"]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var key = input.getAttribute('data-key');
+        if (key === 'y') lv.y = parseFloat(input.value) || 0;
+        else lv.name = input.value;
+        renderLevelTabs();
+        redraw();
+      });
+    });
+  }
+
+  function bindObjectInputs(obj) {
+    propsEl.querySelectorAll('[data-key]:not([data-ctx])').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var key = input.getAttribute('data-key');
+        var kind = input.getAttribute('data-kind');
+        if (kind === 'vec2') {
+          var idx = parseInt(input.getAttribute('data-idx'), 10);
+          if (!Array.isArray(obj[key])) obj[key] = [0, 0];
+          obj[key][idx] = parseFloat(input.value) || 0;
+          redraw();
+          return;
+        }
+        var val;
+        if (kind === 'checkbox') val = input.checked;
+        else if (kind === 'int') val = parseInt(input.value, 10) || 0;
+        else if (kind === 'number') val = parseFloat(input.value) || 0;
+        else if (input.tagName === 'SELECT' && input.value !== '' && !isNaN(input.value)) val = Number(input.value);
+        else val = input.value;
+        obj[key] = val;
+        redraw();
+      });
+    });
+  }
+
+  function labelForType(t) {
+    return { tunnel: 'Туннель', junction: 'Перекрёсток', room: 'Камера', shaft: 'Шахта', ore: 'Руда', cart: 'Вагонетка', start: 'Старт' }[t] || t;
+  }
+
+  function fieldNumber(label, key, val, isInt) {
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input type="number" data-key="' + key + '" data-kind="' + (isInt ? 'int' : 'number') + '" ' +
+      'value="' + esc(val) + '" step="' + (isInt ? '1' : '0.1') + '"></div>';
+  }
+  function fieldText(label, key, val) {
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input type="text" data-key="' + key + '" value="' + esc(val) + '"></div>';
+  }
+  function fieldCheckbox(label, key, val) {
+    return '<div class="field"><label style="cursor:pointer;display:flex;align-items:center;gap:6px;">' +
+      '<input type="checkbox" data-key="' + key + '" data-kind="checkbox"' + (val ? ' checked' : '') + '> ' + label + '</label></div>';
+  }
+  function fieldSelect(label, key, val, options, kind) {
+    kind = kind || 'text';
+    var h = '<div class="field"><label>' + label + '</label>' +
+            '<select data-key="' + key + '" data-kind="' + kind + '">';
+    options.forEach(function (o) {
+      var v = typeof o === 'object' ? o.value : o;
+      var l = typeof o === 'object' ? o.label : o;
+      h += '<option value="' + esc(v) + '"' + (String(v) === String(val) ? ' selected' : '') + '>' + esc(l) + '</option>';
+    });
+    h += '</select></div>';
+    return h;
+  }
+  function fieldVec2(label, key, val, isInt) {
+    val = val || [0, 0];
+    var stepAttr = isInt ? '1' : '0.1';
+    return '<div class="field"><label>' + label + '</label><div class="row">' +
+      '<input type="number" data-key="' + key + '" data-kind="vec2" data-idx="0" value="' + esc(val[0]) + '" step="' + stepAttr + '">' +
+      '<input type="number" data-key="' + key + '" data-kind="vec2" data-idx="1" value="' + esc(val[1]) + '" step="' + stepAttr + '">' +
+      '</div></div>';
+  }
+
+  function levelOptions() {
+    return cfg.levels.map(function (l) {
+      return { value: l.id, label: (l.name || ('Уровень ' + l.id)) + '  (Y=' + l.y + ')' };
+    });
+  }
+  function styleOptions() {
+    return Object.keys(cfg.world.tunnelStyles || { main: {}, branch: {} });
+  }
+
+  function renderFieldsFor(type, obj) {
+    var h = '';
+    if (type === 'tunnel') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldSelect('Стиль', 'style', obj.style || 'main', styleOptions());
+      h += fieldCheckbox('Рельсы', 'rails', obj.rails);
+      h += fieldVec2('От (x, z)', 'from', obj.from, true);
+      h += fieldVec2('До (x, z)', 'to', obj.to, true);
+    } else if (type === 'junction') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldSelect('Стиль', 'style', obj.style || 'main', styleOptions());
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, true);
+    } else if (type === 'room') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldVec2('Центр (x, z)', 'center', obj.center, true);
+      h += fieldVec2('Размер (w, d)', 'size', obj.size, true);
+      h += fieldNumber('Высота', 'height', obj.height || 4, true);
+      h += fieldText('Название', 'name', obj.name);
+    } else if (type === 'shaft') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('От уровня', 'fromLevel', obj.fromLevel, levelOptions(), 'int');
+      h += fieldSelect('До уровня', 'toLevel', obj.toLevel, levelOptions(), 'int');
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, true);
+      h += fieldCheckbox('С лестницей', 'withLadder', obj.withLadder);
+      h += fieldText('Подпись', 'label', obj.label);
+    } else if (type === 'ore') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, true);
+      h += fieldNumber('Радиус', 'radius', obj.radius != null ? obj.radius : 1.5, false);
+      h += fieldNumber('Сила (мкЗв/ч)', 'strength', obj.strength != null ? obj.strength : 1600, false);
+    } else if (type === 'cart') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, false);
+      h += fieldNumber('Поворот (рад)', 'yaw', obj.yaw || 0, false);
+      h += fieldCheckbox('С рудой', 'ore', obj.ore);
+    } else if (type === 'start') {
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, false);
+      h += fieldNumber('Поворот (рад)', 'yaw', obj.yaw || 0, false);
+    }
+    return h;
+  }
+
+  // ============================================================
+  //  Кнопки уровней
+  // ============================================================
+  document.getElementById('btnAddLevel').addEventListener('click', function () {
+    var maxId = -1, maxY = -Infinity;
+    cfg.levels.forEach(function (l) { if (l.id > maxId) maxId = l.id; if (l.y > maxY) maxY = l.y; });
+    var newLv = {
+      id: maxId + 1,
+      y: (isFinite(maxY) ? maxY - 12 : 64),
+      name: 'Горизонт ' + (maxId + 1)
+    };
+    cfg.levels.push(newLv);
+    currentLevelId = newLv.id;
+    selected = null;
+    pendingTunnel = null;
+    renderLevelTabs();
+    renderProps();
+    redraw();
+    setStatus('Добавлен «' + newLv.name + '»');
+  });
+
+  document.getElementById('btnDelLevel').addEventListener('click', function () {
+    if (cfg.levels.length <= 1) { setStatus('Нельзя удалить последний уровень', true); return; }
+    var lv = findLevelById(currentLevelId);
+    if (!lv) return;
+    if (!confirm('Удалить уровень «' + (lv.name || lv.id) + '» и все его элементы?')) return;
+
+    ['tunnels', 'junctions', 'rooms', 'oreSources', 'carts'].forEach(function (k) {
+      cfg[k] = cfg[k].filter(function (el) { return el.level !== currentLevelId; });
+    });
+    cfg.shafts = cfg.shafts.filter(function (s) {
+      return s.fromLevel !== currentLevelId && s.toLevel !== currentLevelId;
+    });
+    cfg.levels = cfg.levels.filter(function (l) { return l.id !== currentLevelId; });
+    currentLevelId = cfg.levels[0].id;
+    selected = null; pendingTunnel = null;
+    renderLevelTabs();
+    renderProps();
+    redraw();
+    setStatus('Уровень удалён');
+  });
+
+  // ============================================================
+  //  Сохранение / загрузка
+  // ============================================================
+  function buildOutput() {
+    var json = JSON.stringify(cfg, null, 2);
+    return '// Автоматически сохранено из редактора Штольни\n' +
+           '// Подключите через <script src="dungeon.js"> перед основным скриптом.\n' +
+           'window.DUNGEON_CONFIG = ' + json + ';\n';
+  }
+
+  function downloadFile(name, content, mime) {
+    var blob = new Blob([content], { type: (mime || 'text/javascript') + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+
+  function saveDungeonJs() {
+    var content = buildOutput();
+    if (window.showSaveFilePicker) {
+      window.showSaveFilePicker({
+        suggestedName: 'dungeon.js',
+        types: [{ description: 'JavaScript-файл', accept: { 'text/javascript': ['.js'] } }]
+      }).then(function (handle) {
+        return handle.createWritable().then(function (w) {
+          return w.write(content).then(function () { return w.close(); });
+        });
+      }).then(function () {
+        setStatus('✓ Сохранено в dungeon.js');
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') { setStatus('Сохранение отменено'); return; }
+        console.warn('File System Access failed, fallback to download:', err);
+        downloadFile('dungeon.js', content);
+        setStatus('✓ Скачано dungeon.js — замените старый файл');
+      });
+    } else {
+      downloadFile('dungeon.js', content);
+      setStatus('✓ Скачано dungeon.js — замените старый файл');
+    }
+  }
+
+  document.getElementById('btnSave').addEventListener('click', saveDungeonJs);
+
+  document.getElementById('btnExportJson').addEventListener('click', function () {
+    downloadFile('dungeon.json', JSON.stringify(cfg, null, 2), 'application/json');
+    setStatus('✓ Экспортирован dungeon.json');
+  });
+
+  document.getElementById('btnLoadFile').addEventListener('click', function () {
+    document.getElementById('fileInput').click();
+  });
+
+  document.getElementById('fileInput').addEventListener('change', function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var text = reader.result;
+        var parsed = null;
+
+        // Вариант 1: "window.DUNGEON_CONFIG = {...};" (с возможными комментариями)
+        var m = String(text).match(/window\.DUNGEON_CONFIG\s*=\s*([\s\S]+?);?\s*$/);
+        if (m) {
+          try { parsed = JSON.parse(m[1].replace(/;\s*$/, '')); } catch (e1) {}
+        }
+        // Вариант 2: чистый JSON
+        if (!parsed) {
+          try { parsed = JSON.parse(text); } catch (e2) {}
+        }
+        if (!parsed) throw new Error('не удалось распознать формат (нужен dungeon.js или dungeon.json)');
+
+        cfg = parsed;
+        ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+          if (!Array.isArray(cfg[k])) cfg[k] = [];
+        });
+        if (!Array.isArray(cfg.levels) || cfg.levels.length === 0) {
+          cfg.levels = [{ id: 0, y: 64, name: 'Горизонт 0' }];
+        }
+        if (!cfg.world) cfg.world = defaultConfig().world;
+        if (!cfg.world.tunnelStyles) cfg.world.tunnelStyles = defaultConfig().world.tunnelStyles;
+        if (!cfg.start) cfg.start = { level: cfg.levels[0].id, at: [cfg.world.size.x / 2, cfg.world.size.z / 2], yaw: 0 };
+
+        currentLevelId = cfg.levels[0].id;
+        selected = null; pendingTunnel = null; drag = null; isPanning = false;
+        renderLevelTabs(); renderProps(); fitView(); redraw();
+        setStatus('✓ Загружено: ' + f.name);
+      } catch (err) {
+        setStatus('Ошибка: ' + err.message, true);
+      }
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
+  // ============================================================
+  //  Старт
+  // ============================================================
+  renderLevelTabs();
+  renderProps();
+  requestAnimationFrame(function () {
+    resizeCanvas();
+    fitView();
+    redraw();
+  });
+
+})();
+</script>
+</body>
+</html>
