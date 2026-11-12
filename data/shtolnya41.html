@@ -187,6 +187,7 @@
   var signRequests = [];
   var railSegments = [];
   var cartPlacements = [];
+  var diagonalRails = []; // сюда будем складывать рельсы для диагональных туннелей
   var startPos = null;
 
   var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null, ladderMesh = null;
@@ -464,6 +465,84 @@
     return count;
   }
 
+    // Туннель по произвольной прямой (для диагоналей).
+  function carveTunnelLine(x0, z0, x1, z1, yFloor, floorW, ceilW, height) {
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 0.5) {
+      // Вырожденный — просто круг в точке
+      var halfW0 = floorW / 2;
+      for (var h = 0; h < height; h++) {
+        var t = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * t;
+        for (var ix = Math.floor(x0 - w); ix <= Math.ceil(x0 + w); ix++)
+          for (var iz = Math.floor(z0 - w); iz <= Math.ceil(z0 + w); iz++) {
+            var ddx = ix + 0.5 - x0, ddz = iz + 0.5 - z0;
+            if (ddx * ddx + ddz * ddz <= (w / 2) * (w / 2) + 0.5) setAir(ix, yFloor + h, iz);
+          }
+      }
+      return;
+    }
+    // Шагаем вдоль линии по 1 клетке — соседние диски перекрываются, щелей нет.
+    var steps = Math.ceil(len);
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      var cx = x0 + dx * t;
+      var cz = z0 + dz * t;
+      for (var h = 0; h < height; h++) {
+        var th = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * th;
+        var halfW = w / 2;
+        var y = yFloor + h;
+        var xi0 = Math.floor(cx - halfW), xi1 = Math.ceil(cx + halfW);
+        var zi0 = Math.floor(cz - halfW), zi1 = Math.ceil(cz + halfW);
+        for (var ix = xi0; ix <= xi1; ix++) {
+          for (var iz = zi0; iz <= zi1; iz++) {
+            var ddx = ix + 0.5 - cx, ddz = iz + 0.5 - cz;
+            if (ddx * ddx + ddz * ddz <= halfW * halfW + 0.5) setAir(ix, y, iz);
+          }
+        }
+      }
+    }
+  }
+
+  // Рельсы вдоль произвольной прямой (для диагоналей).
+  // Шпалы и рельсы приближаем цепочкой мелких кубов — они визуально
+  // лягут вдоль линии. Идеальной геометрии не будет, но вид читается.
+  function addRailsLine(x0, z0, x1, z1, yFloor) {
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 2) return;
+    var ux = dx / len, uz = dz / len;
+    var px = -uz, pz = ux;              // перпендикуляр
+
+    // Две нитки рельсов, смещены на ±0.5 по перпендикуляру
+    for (var side = -1; side <= 1; side += 2) {
+      var ox = px * 0.5 * side, oz = pz * 0.5 * side;
+      var nRail = Math.max(3, Math.floor(len * 1.5));
+      for (var i = 0; i <= nRail; i++) {
+        var t = i / nRail;
+        var cx = x0 + dx * t + ox;
+        var cz = z0 + dz * t + oz;
+        railSegments.push({
+          cx: cx, cy: yFloor + 0.09, cz: cz,
+          sx: 0.14, sy: 0.1, sz: 0.14,
+          r: 0.38, g: 0.34, b: 0.30
+        });
+      }
+    }
+    // Шпалы
+    var nSl = Math.max(2, Math.floor(len / 1.2));
+    for (var j = 0; j <= nSl; j++) {
+      var t2 = j / nSl;
+      railSegments.push({
+        cx: x0 + dx * t2, cy: yFloor + 0.04, cz: z0 + dz * t2,
+        sx: 0.55, sy: 0.08, sz: 0.55,
+        r: 0.22, g: 0.18, b: 0.13
+      });
+    }
+  }
+
   function findFloorY(x, z, fromY) {
     if (x < 0 || x >= WORLD_W || z < 0 || z >= WORLD_D) return -1;
     var y0 = Math.min(WORLD_H - 2, fromY);
@@ -521,18 +600,31 @@
     ENTRANCE_Y = cfg.levels[0].y;
 
     // --- Туннели ---
+    diagonalRails.length = 0;
+
     for (var ti = 0; ti < cfg.tunnels.length; ti++) {
       var t = cfg.tunnels[ti];
       var ty = levelY[t.level];
       var st = cfg.world.tunnelStyles[t.style || "main"];
       var dx = Math.abs(t.to[0] - t.from[0]);
       var dz = Math.abs(t.to[1] - t.from[1]);
-      if (dx >= dz) {
+
+      if (dx < 0.5 && dz >= 0.5) {
+        // Осевой вдоль Z
+        carveTrapezoidZ(t.from[1], t.to[1], t.from[0], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        if (t.rails) addRails(t.from[0], t.from[1], t.from[0], t.to[1], ty);
+      } else if (dz < 0.5 && dx >= 0.5) {
+        // Осевой вдоль X
         carveTrapezoidX(t.from[0], t.to[0], t.from[1], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
         if (t.rails) addRails(t.from[0], t.from[1], t.to[0], t.from[1], ty);
       } else {
-        carveTrapezoidZ(t.from[1], t.to[1], t.from[0], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
-        if (t.rails) addRails(t.from[0], t.from[1], t.from[0], t.to[1], ty);
+        // Диагональный: вырезаем только воксели (стены/пол останутся воксельными)
+        carveTunnelLine(t.from[0], t.from[1], t.to[0], t.to[1], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        
+        // А рельсы отправляем в отдельный массив для гладкой отрисовки
+        if (t.rails) {
+          diagonalRails.push({ x0: t.from[0], z0: t.from[1], x1: t.to[0], z1: t.to[1], yFloor: ty });
+        }
       }
     }
 
@@ -606,7 +698,11 @@
     }
 
     // --- Старт ---
-    var st0 = cfg.start;
+    var st0 = cfg.start || {
+        level: cfg.levels[0].id,
+        at: [Math.floor(WORLD_W / 2), Math.floor(WORLD_D / 2)],
+        yaw: 0
+    };
     startPos = {
       x: st0.at[0], y: levelY[st0.level], z: st0.at[1],
       yaw: st0.yaw || 0
@@ -746,6 +842,70 @@
     crystalMesh = new THREE.Mesh(makeGeo(cp,cn,null,cc,ci), crystalMat); crystalMesh.frustumCulled = false; scene.add(crystalMesh);
   }
 
+  // Рисует повёрнутый 3D-брусок (используется для рельсов и шпал)
+  function pushBoxOriented(cx, cy, cz, sx, sy, sz, ux, uz, px, pz, posArr, norArr, colArr, idxArr, r, g, b) {
+    var hx = sx/2, hy = sy/2, hz = sz/2;
+    var verts = [
+      [-hx, -hy, -hz], [ hx, -hy, -hz], [ hx,  hy, -hz], [-hx,  hy, -hz],
+      [-hx, -hy,  hz], [ hx, -hy,  hz], [ hx,  hy,  hz], [-hx,  hy,  hz]
+    ];
+    var wv = [];
+    for (var i = 0; i < 8; i++) {
+      var lx = verts[i][0], ly = verts[i][1], lz = verts[i][2];
+      wv.push([cx + lx*ux + lz*px, cy + ly, cz + lx*uz + lz*pz]);
+    }
+    var faces = [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+    for (var f = 0; f < 6; f++) {
+      var fv = faces[f];
+      var base = posArr.length / 3;
+      var A = wv[fv[0]], B = wv[fv[1]], C = wv[fv[2]];
+      var e1 = [B[0]-A[0], B[1]-A[1], B[2]-A[2]];
+      var e2 = [C[0]-A[0], C[1]-A[1], C[2]-A[2]];
+      var nx = e1[1]*e2[2] - e1[2]*e2[1];
+      var ny = e1[2]*e2[0] - e1[0]*e2[2];
+      var nz = e1[0]*e2[1] - e1[1]*e2[0];
+      var nl = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+      nx/=nl; ny/=nl; nz/=nl;
+      for (var k = 0; k < 4; k++) {
+        var v = wv[fv[k]];
+        posArr.push(v[0], v[1], v[2]);
+        norArr.push(nx, ny, nz);
+        colArr.push(r, g, b);
+      }
+      idxArr.push(base, base+1, base+2, base, base+2, base+3);
+    }
+  }
+
+  // Собирает геометрию для диагональных рельсов
+  function pushDiagonalRails(rail, posArr, norArr, colArr, idxArr) {
+    var x0 = rail.x0, z0 = rail.z0, x1 = rail.x1, z1 = rail.z1;
+    var y = rail.yFloor + 0.05;
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx*dx + dz*dz);
+    if (len < 0.1) return;
+    var ux = dx/len, uz = dz/len;
+    var px = -uz, pz = ux; // перпендикуляр
+
+    // 2 нитки рельсов (смещены на ±0.5)
+    var offsets = [-0.5, 0.5];
+    for (var oi = 0; oi < 2; oi++) {
+      var off = offsets[oi];
+      var cx = (x0 + x1)/2 + px * off;
+      var cz = (z0 + z1)/2 + pz * off;
+      pushBoxOriented(cx, y + 0.05, cz, len, 0.1, 0.1, ux, uz, px, pz, posArr, norArr, colArr, idxArr, 0.38, 0.34, 0.30);
+    }
+
+    // Шпалы (поперёк рельсов)
+    var nSl = Math.max(2, Math.floor(len / 1.2));
+    for (var j = 0; j <= nSl; j++) {
+      var t = j / nSl;
+      var cx2 = x0 + dx * t;
+      var cz2 = z0 + dz * t;
+      // Шпала: длина вдоль перпендикуляра = 1.2, толщина = 0.2
+      pushBoxOriented(cx2, y, cz2, 0.2, 0.08, 1.2, ux, uz, px, pz, posArr, norArr, colArr, idxArr, 0.22, 0.18, 0.13);
+    }
+  }
+
   function buildRailGeometry() {
     var pos = [], nor = [], col = [], idx = [];
     function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
@@ -765,6 +925,12 @@
       var s = railSegments[i];
       addBox(s.cx, s.cy, s.cz, s.sx, s.sy, s.sz, s.r, s.g, s.b);
     }
+
+    // Диагональные рельсы
+    for (var ri = 0; ri < diagonalRails.length; ri++) {
+      pushDiagonalRails(diagonalRails[ri], pos, nor, col, idx);
+    }
+    
     if (railMesh) { scene.remove(railMesh); railMesh.geometry.dispose(); railMesh = null; }
     if (pos.length === 0) return;
     var geo = new THREE.BufferGeometry();
@@ -1084,18 +1250,30 @@
   var SURFACE_URL = "../index.html";
   var ceilingExit = null;
 
+  // Выход на поверхность
   function buildCeilingExit() {
     if (ceilingExit) { scene.remove(ceilingExit); }
-    var geom = new THREE.PlaneGeometry(5, 5);
-    var mat = new THREE.MeshBasicMaterial({ color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-    ceilingExit = new THREE.Mesh(geom, mat);
-    ceilingExit.rotation.x = Math.PI / 2;
-    ceilingExit.position.set(CENTER_X + 0.5, ENTRANCE_Y + TUNNEL_HEIGHT - 0.1, CENTER_Z + 0.5);
-    ceilingExit.name = "ceilingExit";
-    scene.add(ceilingExit);
-    var glow = new THREE.PointLight(0xd8ffd8, 1.4, 12);
-    glow.position.set(ceilingExit.position.x, ceilingExit.position.y - 0.5, ceilingExit.position.z);
-    scene.add(glow);
+      // Выход на поверхность = над точкой Старта на верхнем уровне.
+      // Если startPos почему-то нет — фолбэк в центр мира.
+      var sx = (startPos && isFinite(startPos.x)) ? startPos.x : Math.floor(WORLD_W / 2);
+      var sz = (startPos && isFinite(startPos.z)) ? startPos.z : Math.floor(WORLD_D / 2);
+      var ex = sx + 0.5;
+      var ez = sz + 0.5;
+      var ey = ENTRANCE_Y + TUNNEL_HEIGHT - 0.1;
+
+      var geom = new THREE.PlaneGeometry(5, 5);
+      var mat = new THREE.MeshBasicMaterial({
+          color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide
+      });
+      ceilingExit = new THREE.Mesh(geom, mat);
+      ceilingExit.rotation.x = Math.PI / 2;
+      ceilingExit.position.set(ex, ey, ez);
+      ceilingExit.name = "ceilingExit";
+      scene.add(ceilingExit);
+
+      var glow = new THREE.PointLight(0xd8ffd8, 1.4, 12);
+      glow.position.set(ex, ey - 0.5, ez);
+      scene.add(glow);
   }
 
   // ============================================================
@@ -1528,8 +1706,40 @@
     document.getElementById("depthMax").textContent = "Рекорд: " + PLAYER.maxDepth.toFixed(1) + " м";
   }
 
+  // Ищем валидную точку спавна рядом с entrance (x,z,y — уровень).
+  function findSpawnPoint(x, z, y) {
+    // 1) Идеальная позиция: сами координаты и уровень, чуть выше пола.
+    var testX = x + 0.5, testZ = z + 0.5;
+    for (var testY = y + 1; testY >= y - 8; testY--) {
+      if (testY < 2) break;
+      if (!solidAt(Math.floor(testX), testY, Math.floor(testZ)) &&
+          !solidAt(Math.floor(testX), testY + 1, Math.floor(testZ)) &&
+          solidAt(Math.floor(testX), testY - 1, Math.floor(testZ))) {
+        return { x: testX, y: testY + 0.1, z: testZ };
+      }
+    }
+    // 2) Не нашли — спираль по расширяющемуся радиусу.
+    for (var r = 1; r <= 12; r++) {
+      for (var da = 0; da < 24; da++) {
+        var ang = (da / 24) * Math.PI * 2;
+        var tx = Math.round(x + Math.cos(ang) * r);
+        var tz = Math.round(z + Math.sin(ang) * r);
+        if (tx < 2 || tx >= WORLD_W - 2 || tz < 2 || tz >= WORLD_D - 2) continue;
+        for (var ty = y + 4; ty >= y - 16; ty--) {
+          if (ty < 2) break;
+          if (!solidAt(tx, ty, tz) && !solidAt(tx, ty + 1, tz) && solidAt(tx, ty - 1, tz)) {
+            return { x: tx + 0.5, y: ty + 0.1, z: tz + 0.5 };
+          }
+        }
+      }
+    }
+    // 3) Совсем ничего не нашли — возвращаем как есть.
+    return { x: x + 0.5, y: y + 0.1, z: z + 0.5 };
+  }
+
   function resetGame(entrance) {
-    PLAYER.pos.set(entrance.x + 0.5, entrance.y + 0.1, entrance.z + 0.5);
+    var sp = findSpawnPoint(entrance.x, entrance.z, entrance.y);
+    PLAYER.pos.set(sp.x, sp.y, sp.z);
     var guard = 0;
     while (collides(PLAYER.pos.x, PLAYER.pos.y, PLAYER.pos.z) && guard < 60) {
       PLAYER.pos.y -= 0.05;
