@@ -285,7 +285,7 @@
   }
 
   function buildMaterials(cfg) {
-    concreteTex = makeConcreteTexture(cfg.textures.concrete.params);
+    concreteTex = makeConcreteTexture(cfg.textures.concrete);
     var m = cfg.materials;
     stoneMat = new THREE.MeshLambertMaterial({ map: concreteTex, vertexColors: true, side: THREE.DoubleSide });
     uranMat = new THREE.MeshLambertMaterial({
@@ -308,43 +308,209 @@
   // ============================================================
   //  Процедурная текстура (параметризованная)
   // ============================================================
-  function makeConcreteTexture(p) {
-    var size = p.size || 128;
-    var cv = document.createElement("canvas");
-    cv.width = cv.height = size;
-    var ctx = cv.getContext("2d");
+  function hexToRgb(hex) {
+    if (typeof hex !== 'string') return null;
+    var m = hex.match(/^#([0-9a-f]{6})$/i);
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function drawWrapped(ctx, size, x, y, r, fn) {
+    for (var ox = -1; ox <= 1; ox++) {
+      for (var oy = -1; oy <= 1; oy++) {
+        var wx = x + ox * size, wy = y + oy * size;
+        if (wx + r < 0 || wx - r > size) continue;
+        if (wy + r < 0 || wy - r > size) continue;
+        fn(wx, wy);
+      }
+    }
+  }
+  function speck(ctx, size, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    if (x + w > size) ctx.fillRect(x - size, y, w, h);
+    if (y + h > size) ctx.fillRect(x, y - size, w, h);
+    if (x + w > size && y + h > size) ctx.fillRect(x - size, y - size, w, h);
+  }
+
+  // Генератор 1: бетон с границами (как раньше)
+  function paintConcrete(ctx, size, p) {
     ctx.fillStyle = p.baseColor || "#8a8781";
     ctx.fillRect(0, 0, size, size);
-    var nVar = p.noiseVariance || 46;
-    var base = 120;
-    for (var i = 0; i < (p.noiseCount || 4200); i++) {
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 46;
+    var nCount = p.noiseCount != null ? p.noiseCount : 4200;
+    for (var i = 0; i < nCount; i++) {
       var v = Math.random() * nVar - nVar / 2;
-      var c = Math.round(base + v);
+      var c = Math.round(120 + v);
       ctx.fillStyle = "rgba(" + c + "," + c + "," + (c - 6) + ",0.35)";
       ctx.fillRect(Math.random() * size, Math.random() * size, 1.2, 1.2);
     }
     ctx.strokeStyle = p.edgeColor || "rgba(38,34,28,0.75)";
-    ctx.lineWidth = p.edgeWidth || 5;
+    ctx.lineWidth = p.edgeWidth != null ? p.edgeWidth : 5;
     ctx.strokeRect(2.5, 2.5, size - 5, size - 5);
     ctx.strokeStyle = p.innerEdgeColor || "rgba(190,186,178,0.35)";
-    ctx.lineWidth = p.innerEdgeWidth || 1.5;
+    ctx.lineWidth = p.innerEdgeWidth != null ? p.innerEdgeWidth : 1.5;
     ctx.strokeRect(6, 6, size - 12, size - 12);
-    for (var k = 0; k < (p.stainCount || 5); k++) {
+    var sc = p.stainCount != null ? p.stainCount : 5;
+    for (var k = 0; k < sc; k++) {
       var x0 = Math.random() * size;
       var wdt = 2 + Math.random() * 5;
       var len = size * (0.25 + Math.random() * 0.65);
       var grad = ctx.createLinearGradient(x0, 0, x0, len);
-      grad.addColorStop(0, "rgba(126, 74, 38, 0.35)");
-      grad.addColorStop(1, "rgba(126, 74, 38, 0)");
+      grad.addColorStop(0, "rgba(126,74,38,0.35)");
+      grad.addColorStop(1, "rgba(126,74,38,0)");
       ctx.fillStyle = grad;
       ctx.fillRect(x0, 0, wdt, len);
     }
-    for (var pi = 0; pi < (p.pitCount || 22); pi++) {
+    var pc = p.pitCount != null ? p.pitCount : 22;
+    for (var pi = 0; pi < pc; pi++) {
       ctx.fillStyle = "rgba(52,48,44,0.45)";
       ctx.beginPath();
       ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  // Генератор 2: бесшовный серый бетон
+  function paintConcreteSmooth(ctx, size, p) {
+    ctx.fillStyle = p.baseColor || "#7d7b76";
+    ctx.fillRect(0, 0, size, size);
+
+    var bCount = p.blotchCount != null ? p.blotchCount : 16;
+    var bVar = p.blotchVariance != null ? p.blotchVariance : 30;
+    for (var i = 0; i < bCount; i++) {
+      var x = Math.random() * size, y = Math.random() * size;
+      var r = size * 0.08 + Math.random() * size * 0.18;
+      var tone = (Math.random() - 0.5) * 2 * bVar;
+      var b = Math.round(125 + tone);
+      var rc = b, gc = b, bc = b - 4;
+      (function (x, y, r, rc, gc, bc) {
+        drawWrapped(ctx, size, x, y, r, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, "rgba(" + rc + "," + gc + "," + bc + ",0.22)");
+          grad.addColorStop(1, "rgba(" + rc + "," + gc + "," + bc + ",0)");
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(x, y, r, rc, gc, bc);
+    }
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 30;
+    var nCount = p.noiseCount != null ? p.noiseCount : 5000;
+    for (var j = 0; j < nCount; j++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(120 + v);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.2, 1.2,
+            "rgba(" + c + "," + c + "," + (c - 4) + ",0.25)");
+    }
+
+    var pc = p.pitCount != null ? p.pitCount : 25;
+    for (var k = 0; k < pc; k++) {
+      var px = Math.random() * size, py = Math.random() * size;
+      var pr = 0.7 + Math.random() * 1.6;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          ctx.fillStyle = "rgba(52,48,44,0.4)";
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(px, py, pr);
+    }
+  }
+
+  // Генератор 3: земля + серый камень
+  function paintDirtStone(ctx, size, p) {
+    ctx.fillStyle = p.dirtColor || "#5c4230";
+    ctx.fillRect(0, 0, size, size);
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 40;
+    var nCount = p.noiseCount != null ? p.noiseCount : 8000;
+    for (var i = 0; i < nCount; i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var rc = Math.round(90 + v);
+      var gc = Math.round(64 + v * 0.85);
+      var bc = Math.round(46 + v * 0.75);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.4, 1.4,
+            "rgba(" + rc + "," + gc + "," + bc + ",0.35)");
+    }
+
+    for (var s = 0; s < 22; s++) {
+      var sx = Math.random() * size, sy = Math.random() * size;
+      var sr = 1 + Math.random() * 3;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, "rgba(40,26,16,0.45)");
+          grad.addColorStop(1, "rgba(40,26,16,0)");
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(sx, sy, sr);
+    }
+
+    var stoneBase = hexToRgb(p.stoneColor || "#8c8880") || { r: 140, g: 136, b: 128 };
+    var stoneCount = p.stoneCount != null ? p.stoneCount : 18;
+    var minR = p.stoneMinR != null ? p.stoneMinR : 4;
+    var maxR = p.stoneMaxR != null ? p.stoneMaxR : 16;
+
+    for (var st = 0; st < stoneCount; st++) {
+      var x = Math.random() * size, y = Math.random() * size;
+      var r = minR + Math.random() * (maxR - minR);
+      var vertCount = 5 + Math.floor(Math.random() * 4);
+      var verts = [];
+      for (var vv = 0; vv < vertCount; vv++) {
+        var ang = (vv / vertCount) * Math.PI * 2 + Math.random() * 0.4;
+        var rr = r * (0.7 + Math.random() * 0.4);
+        verts.push([Math.cos(ang) * rr, Math.sin(ang) * rr]);
+      }
+      var tone = (Math.random() - 0.5) * 30;
+      var srC = Math.max(0, Math.min(255, stoneBase.r + tone));
+      var sgC = Math.max(0, Math.min(255, stoneBase.g + tone));
+      var sbC = Math.max(0, Math.min(255, stoneBase.b + tone));
+      (function (x, y, r, verts, srC, sgC, sbC) {
+        drawWrapped(ctx, size, x, y, r + 2, function (cx, cy) {
+          ctx.fillStyle = "rgba(20,14,8,0.45)";
+          ctx.beginPath();
+          for (var i2 = 0; i2 < verts.length; i2++) {
+            var vx = cx + verts[i2][0] + 1.2, vy = cy + verts[i2][1] + 1.2;
+            if (i2 === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+          }
+          ctx.closePath(); ctx.fill();
+
+          var grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+          grad.addColorStop(0, "rgb(" + Math.round(srC + 18) + "," + Math.round(sgC + 18) + "," + Math.round(sbC + 18) + ")");
+          grad.addColorStop(1, "rgb(" + Math.round(srC - 10) + "," + Math.round(sgC - 10) + "," + Math.round(sbC - 10) + ")");
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          for (var i3 = 0; i3 < verts.length; i3++) {
+            var vx2 = cx + verts[i3][0], vy2 = cy + verts[i3][1];
+            if (i3 === 0) ctx.moveTo(vx2, vy2); else ctx.lineTo(vx2, vy2);
+          }
+          ctx.closePath(); ctx.fill();
+
+          for (var sp = 0; sp < 10; sp++) {
+            var px = cx + (Math.random() - 0.5) * r * 1.2;
+            var py = cy + (Math.random() - 0.5) * r * 1.2;
+            var sv = (Math.random() - 0.5) * 25;
+            ctx.fillStyle = "rgba(" + Math.round(srC + sv) + "," + Math.round(sgC + sv) + "," + Math.round(sbC + sv) + ",0.55)";
+            ctx.fillRect(px, py, 1.2, 1.2);
+          }
+        });
+      })(x, y, r, verts, srC, sgC, sbC);
+    }
+  }
+
+  function makeConcreteTexture(texCfg) {
+    var p = (texCfg && texCfg.params) || {};
+    var gen = (texCfg && texCfg.generator) || 'concrete';
+    var size = p.size || 128;
+    var cv = document.createElement("canvas");
+    cv.width = cv.height = size;
+    var ctx = cv.getContext("2d");
+
+    if (gen === 'concreteSmooth')      paintConcreteSmooth(ctx, size, p);
+    else if (gen === 'dirtStone')      paintDirtStone(ctx, size, p);
+    else                                paintConcrete(ctx, size, p);
+
     var tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 4;

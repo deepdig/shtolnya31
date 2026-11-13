@@ -6,9 +6,9 @@ window.DUNGEON_CONFIG = {
   "name": "Штольня — Стандартная шахта",
   "world": {
     "size": {
-      "x": 96,
+      "x": 109,
       "y": 72,
-      "z": 96
+      "z": 144
     },
     "tunnelHeight": 3,
     "tunnelStyles": {
@@ -48,7 +48,7 @@ window.DUNGEON_CONFIG = {
   },
   "textures": {
     "concrete": {
-      "generator": "concrete",
+      "generator": "concreteSmooth",
       "params": {
         "size": 128,
         "baseColor": "#8a8781",
@@ -59,7 +59,14 @@ window.DUNGEON_CONFIG = {
         "edgeColor": "rgba(38,34,28,0.75)",
         "edgeWidth": 5,
         "innerEdgeColor": "rgba(190,186,178,0.35)",
-        "innerEdgeWidth": 1.5
+        "innerEdgeWidth": 1.5,
+        "blotchCount": 16,
+        "blotchVariance": 30,
+        "dirtColor": "#5c4230",
+        "stoneColor": "#8c8880",
+        "stoneCount": 18,
+        "stoneMinR": 4,
+        "stoneMaxR": 16
       }
     }
   },
@@ -106,7 +113,7 @@ window.DUNGEON_CONFIG = {
     "level": 0,
     "at": [
       92,
-      76
+      117
     ],
     "yaw": 1.585
   },
@@ -118,11 +125,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         10,
-        48
+        89
       ],
       "to": [
         86,
-        48
+        89
       ]
     },
     {
@@ -132,11 +139,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         48,
-        10
+        51
       ],
       "to": [
         48,
-        86
+        127
       ]
     },
     {
@@ -146,11 +153,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         72,
-        24
+        65
       ]
     },
     {
@@ -160,11 +167,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        72
+        113
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -174,11 +181,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         24,
-        72
+        113
       ]
     },
     {
@@ -188,11 +195,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         72,
-        24
+        65
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -202,11 +209,11 @@ window.DUNGEON_CONFIG = {
       "rails": false,
       "from": [
         72,
-        72
+        113
       ],
       "to": [
         72,
-        84
+        125
       ]
     },
     {
@@ -216,11 +223,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         10,
-        48
+        89
       ],
       "to": [
         86,
-        48
+        89
       ]
     },
     {
@@ -230,11 +237,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         48,
-        10
+        51
       ],
       "to": [
         48,
-        86
+        127
       ]
     },
     {
@@ -244,11 +251,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         72,
-        24
+        65
       ]
     },
     {
@@ -258,11 +265,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        72
+        113
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -272,11 +279,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         24,
-        72
+        113
       ]
     },
     {
@@ -286,11 +293,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         72,
-        24
+        65
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -300,11 +307,11 @@ window.DUNGEON_CONFIG = {
       "rails": false,
       "from": [
         24,
-        72
+        113
       ],
       "to": [
         12,
-        72
+        113
       ]
     },
     {
@@ -314,11 +321,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         10,
-        48
+        89
       ],
       "to": [
         86,
-        48
+        89
       ]
     },
     {
@@ -328,11 +335,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         48,
-        10
+        51
       ],
       "to": [
         48,
-        86
+        127
       ]
     },
     {
@@ -342,11 +349,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         72,
-        24
+        65
       ]
     },
     {
@@ -356,11 +363,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        72
+        113
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -370,11 +377,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         24,
-        72
+        113
       ]
     },
     {
@@ -384,11 +391,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         72,
-        24
+        65
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -398,11 +405,11 @@ window.DUNGEON_CONFIG = {
       "rails": false,
       "from": [
         72,
-        24
+        65
       ],
       "to": [
         84,
-        24
+        65
       ]
     },
     {
@@ -412,11 +419,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         10,
-        48
+        89
       ],
       "to": [
         86,
-        48
+        89
       ]
     },
     {
@@ -426,11 +433,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         48,
-        10
+        51
       ],
       "to": [
         48,
-        86
+        127
       ]
     },
     {
@@ -440,11 +447,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         72,
-        24
+        65
       ]
     },
     {
@@ -454,11 +461,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        72
+        113
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -468,11 +475,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        24
+        65
       ],
       "to": [
         24,
-        72
+        113
       ]
     },
     {
@@ -482,11 +489,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         72,
-        24
+        65
       ],
       "to": [
         72,
-        72
+        113
       ]
     },
     {
@@ -496,11 +503,11 @@ window.DUNGEON_CONFIG = {
       "rails": false,
       "from": [
         72,
-        72
+        113
       ],
       "to": [
         72,
-        84
+        125
       ]
     },
     {
@@ -510,11 +517,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        4
+        45
       ],
       "to": [
         48,
-        10
+        51
       ]
     },
     {
@@ -524,11 +531,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        95
+        136
       ],
       "to": [
         61,
-        -33
+        8
       ]
     },
     {
@@ -538,11 +545,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        76
+        117
       ],
       "to": [
         92,
-        76
+        117
       ]
     },
     {
@@ -552,11 +559,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        38
+        79
       ],
       "to": [
         68,
-        38
+        79
       ]
     },
     {
@@ -566,11 +573,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        -26
+        15
       ],
       "to": [
         66,
-        -26
+        15
       ]
     },
     {
@@ -580,11 +587,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        92
+        133
       ],
       "to": [
         92,
-        92
+        133
       ]
     },
     {
@@ -594,11 +601,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         61,
-        64
+        105
       ],
       "to": [
         24,
-        32
+        73
       ]
     },
     {
@@ -608,11 +615,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        31
+        72
       ],
       "to": [
         24,
-        20
+        61
       ]
     },
     {
@@ -622,11 +629,11 @@ window.DUNGEON_CONFIG = {
       "rails": true,
       "from": [
         24,
-        20
+        61
       ],
       "to": [
         61,
-        4
+        45
       ]
     }
   ],
@@ -636,7 +643,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         48,
-        48
+        89
       ],
       "style": "main"
     },
@@ -645,7 +652,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         24,
-        24
+        65
       ],
       "style": "main"
     },
@@ -654,7 +661,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         72,
-        24
+        65
       ],
       "style": "main"
     },
@@ -663,7 +670,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         24,
-        72
+        113
       ],
       "style": "main"
     },
@@ -672,7 +679,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         72,
-        72
+        113
       ],
       "style": "main"
     },
@@ -681,7 +688,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         48,
-        24
+        65
       ],
       "style": "main"
     },
@@ -690,7 +697,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         48,
-        72
+        113
       ],
       "style": "main"
     },
@@ -699,7 +706,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         24,
-        48
+        89
       ],
       "style": "main"
     },
@@ -708,7 +715,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         72,
-        48
+        89
       ],
       "style": "main"
     },
@@ -717,7 +724,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         48,
-        48
+        89
       ],
       "style": "main"
     },
@@ -726,7 +733,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         24,
-        24
+        65
       ],
       "style": "main"
     },
@@ -735,7 +742,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         72,
-        24
+        65
       ],
       "style": "main"
     },
@@ -744,7 +751,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         24,
-        72
+        113
       ],
       "style": "main"
     },
@@ -753,7 +760,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         72,
-        72
+        113
       ],
       "style": "main"
     },
@@ -762,7 +769,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         48,
-        24
+        65
       ],
       "style": "main"
     },
@@ -771,7 +778,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         48,
-        72
+        113
       ],
       "style": "main"
     },
@@ -780,7 +787,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         24,
-        48
+        89
       ],
       "style": "main"
     },
@@ -789,7 +796,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         72,
-        48
+        89
       ],
       "style": "main"
     },
@@ -798,7 +805,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         48,
-        48
+        89
       ],
       "style": "main"
     },
@@ -807,7 +814,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         24,
-        24
+        65
       ],
       "style": "main"
     },
@@ -816,7 +823,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         72,
-        24
+        65
       ],
       "style": "main"
     },
@@ -825,7 +832,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         24,
-        72
+        113
       ],
       "style": "main"
     },
@@ -834,7 +841,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         72,
-        72
+        113
       ],
       "style": "main"
     },
@@ -843,7 +850,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         48,
-        24
+        65
       ],
       "style": "main"
     },
@@ -852,7 +859,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         48,
-        72
+        113
       ],
       "style": "main"
     },
@@ -861,7 +868,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         24,
-        48
+        89
       ],
       "style": "main"
     },
@@ -870,7 +877,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         72,
-        48
+        89
       ],
       "style": "main"
     },
@@ -879,7 +886,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         48,
-        48
+        89
       ],
       "style": "main"
     },
@@ -888,7 +895,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         24,
-        24
+        65
       ],
       "style": "main"
     },
@@ -897,7 +904,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         72,
-        24
+        65
       ],
       "style": "main"
     },
@@ -906,7 +913,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         24,
-        72
+        113
       ],
       "style": "main"
     },
@@ -915,7 +922,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         72,
-        72
+        113
       ],
       "style": "main"
     },
@@ -924,7 +931,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         48,
-        24
+        65
       ],
       "style": "main"
     },
@@ -933,7 +940,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         48,
-        72
+        113
       ],
       "style": "main"
     },
@@ -942,7 +949,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         24,
-        48
+        89
       ],
       "style": "main"
     },
@@ -951,7 +958,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         72,
-        48
+        89
       ],
       "style": "main"
     }
@@ -962,7 +969,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "center": [
         66,
-        45
+        86
       ],
       "size": [
         6,
@@ -976,7 +983,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "center": [
         30,
-        51
+        92
       ],
       "size": [
         6,
@@ -990,7 +997,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "center": [
         66,
-        45
+        86
       ],
       "size": [
         6,
@@ -1004,7 +1011,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "center": [
         30,
-        51
+        92
       ],
       "size": [
         6,
@@ -1018,7 +1025,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "center": [
         71,
-        46
+        87
       ],
       "size": [
         8,
@@ -1032,14 +1039,14 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "center": [
         83,
-        -25
+        16
       ],
       "size": [
         35,
         8
       ],
       "height": 4,
-      "name": "Новая камера"
+      "name": "Столовая"
     }
   ],
   "shafts": [
@@ -1049,7 +1056,7 @@ window.DUNGEON_CONFIG = {
       "toLevel": 2,
       "at": [
         60,
-        48
+        89
       ],
       "withLadder": true,
       "label": "Шахта 2 — лестница"
@@ -1060,7 +1067,7 @@ window.DUNGEON_CONFIG = {
       "toLevel": 3,
       "at": [
         48,
-        60
+        101
       ],
       "withLadder": true,
       "label": "Шахта 3 — лестница"
@@ -1071,7 +1078,7 @@ window.DUNGEON_CONFIG = {
       "toLevel": 3,
       "at": [
         24,
-        48
+        89
       ],
       "withLadder": false,
       "label": "Шахта 3 — ОСТОРОЖНО"
@@ -1082,7 +1089,7 @@ window.DUNGEON_CONFIG = {
       "toLevel": 4,
       "at": [
         48,
-        30
+        71
       ],
       "withLadder": true,
       "label": "Шахта 4 — лестница"
@@ -1093,7 +1100,7 @@ window.DUNGEON_CONFIG = {
       "toLevel": 1,
       "at": [
         61,
-        4
+        45
       ],
       "withLadder": true,
       "label": "Новая шахта"
@@ -1105,7 +1112,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         66,
-        41
+        82
       ],
       "radius": 1.5,
       "strength": 1700
@@ -1115,7 +1122,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         51,
-        26
+        67
       ],
       "radius": 1.5,
       "strength": 1550
@@ -1125,7 +1132,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         30,
-        55
+        96
       ],
       "radius": 1.5,
       "strength": 1750
@@ -1135,7 +1142,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         74,
-        74
+        115
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1145,7 +1152,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         66,
-        41
+        82
       ],
       "radius": 1.5,
       "strength": 1800
@@ -1155,7 +1162,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         26,
-        74
+        115
       ],
       "radius": 1.5,
       "strength": 1650
@@ -1165,7 +1172,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         30,
-        55
+        96
       ],
       "radius": 1.5,
       "strength": 1900
@@ -1175,7 +1182,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         50,
-        52
+        93
       ],
       "radius": 1.5,
       "strength": 1750
@@ -1185,7 +1192,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         73,
-        56
+        97
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1195,7 +1202,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         96,
-        -21
+        20
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1205,7 +1212,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         98,
-        -28
+        13
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1215,7 +1222,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         36,
-        44
+        85
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1227,7 +1234,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         66.5,
-        48.5
+        89.5
       ],
       "yaw": 0,
       "ore": false
@@ -1237,7 +1244,7 @@ window.DUNGEON_CONFIG = {
       "level": 2,
       "at": [
         48.5,
-        60.5
+        101.5
       ],
       "yaw": 1.5708,
       "ore": true
@@ -1247,7 +1254,7 @@ window.DUNGEON_CONFIG = {
       "level": 3,
       "at": [
         48.5,
-        30.5
+        71.5
       ],
       "yaw": 1.5708,
       "ore": false
@@ -1257,7 +1264,7 @@ window.DUNGEON_CONFIG = {
       "level": 4,
       "at": [
         72.5,
-        48.5
+        89.5
       ],
       "yaw": 0,
       "ore": true
@@ -1267,7 +1274,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         70.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1277,7 +1284,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         73.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1287,7 +1294,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         76.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1297,7 +1304,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         80.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1307,7 +1314,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         83.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1317,7 +1324,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         88.5,
-        -21.5
+        19.5
       ],
       "yaw": 0,
       "ore": false
@@ -1327,7 +1334,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         75.5,
-        -28.5
+        12.5
       ],
       "yaw": 0,
       "ore": false
@@ -1337,7 +1344,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         85.5,
-        -28.5
+        12.5
       ],
       "yaw": 0,
       "ore": false

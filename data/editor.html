@@ -95,6 +95,7 @@
     <button class="toolBtn" data-tool="ore">◆ Руда</button>
     <button class="toolBtn" data-tool="cart">⬛ Вагонетка</button>
     <button class="toolBtn" data-tool="start">▶ Старт</button>
+    <button class="toolBtn" data-tool="texture">▦ Текстуры</button>
   </div>
 
   <div id="canvasWrap">
@@ -180,7 +181,7 @@
   // ============================================================
   var currentLevelId = cfg.levels[0].id;
   var tool = 'select';
-  var selected = null;          // { type, obj, arrayName }
+  var selected = null;
   var view = { scale: 6, ox: 0, oy: 0 };
   var drag = null;
   var pendingTunnel = null;
@@ -289,7 +290,6 @@
     var cw = wrap.clientWidth, ch = wrap.clientHeight;
     ctx.clearRect(0, 0, cw, ch);
 
-    // Фон-шахматка
     ctx.fillStyle = '#0e100e';
     ctx.fillRect(0, 0, cw, ch);
 
@@ -776,6 +776,7 @@
       btn.classList.add('active');
       tool = btn.getAttribute('data-tool');
       pendingTunnel = null;
+      renderProps();
       redraw();
     });
   });
@@ -784,8 +785,24 @@
   //  Панель свойств
   // ============================================================
   function renderProps() {
+    if (tool === 'texture') {
+      renderTextureEditor();
+      return;
+    }
     var html = '';
     var lv = findLevelById(currentLevelId);
+
+    // Секция «Мир»
+    if (cfg.world && cfg.world.size) {
+      html += '<h3>Размер мира</h3>';
+      html += '<div class="field"><label>X (ширина)</label>' +
+              '<input type="number" data-ctx="world" data-key="size.x" data-kind="int" value="' + esc(cfg.world.size.x) + '" step="1" min="16"></div>';
+      html += '<div class="field"><label>Y (высота)</label>' +
+              '<input type="number" data-ctx="world" data-key="size.y" data-kind="int" value="' + esc(cfg.world.size.y) + '" step="1" min="16"></div>';
+      html += '<div class="field"><label>Z (глубина)</label>' +
+              '<input type="number" data-ctx="world" data-key="size.z" data-kind="int" value="' + esc(cfg.world.size.z) + '" step="1" min="16"></div>';
+      html += '<button class="btn secondary" id="btnFitWorld" style="width:100%;margin-top:4px;">📐 Расширить мир под все элементы</button>';
+    }
 
     // Секция «Текущий уровень»
     if (lv) {
@@ -800,6 +817,7 @@
       html += '<p class="hint" style="margin-top:14px;">Выберите элемент на карте или используйте инструмент для создания нового.</p>';
       propsEl.innerHTML = html;
       bindLevelInputs(lv);
+      bindWorldInputs();
       return;
     }
 
@@ -813,6 +831,7 @@
     propsEl.innerHTML = html;
 
     bindLevelInputs(lv);
+    bindWorldInputs();
     bindObjectInputs(obj);
 
     var delBtn = propsEl.querySelector('#btnDelSel');
@@ -829,6 +848,348 @@
     }
   }
 
+  // ============================================================
+  //  Редактор текстуры блоков
+  // ============================================================
+  var TEX_DEFAULTS = {
+    concrete: {
+      size: 128, baseColor: '#8a8781', noiseCount: 4200, noiseVariance: 46,
+      pitCount: 22, stainCount: 5, edgeColor: 'rgba(38,34,28,0.75)', edgeWidth: 5,
+      innerEdgeColor: 'rgba(190,186,178,0.35)', innerEdgeWidth: 1.5
+    },
+    concreteSmooth: {
+      size: 128, baseColor: '#7d7b76', noiseCount: 5000, noiseVariance: 30,
+      blotchCount: 16, blotchVariance: 30, pitCount: 25
+    },
+    dirtStone: {
+      size: 128, dirtColor: '#5c4230', stoneColor: '#8c8880',
+      stoneCount: 18, stoneMinR: 4, stoneMaxR: 16,
+      noiseCount: 8000, noiseVariance: 40
+    }
+  };
+
+  function getTexCfg() {
+    if (!cfg.textures) cfg.textures = {};
+    if (!cfg.textures.concrete) cfg.textures.concrete = { generator: 'concrete', params: {} };
+    var tex = cfg.textures.concrete;
+    if (!tex.generator) tex.generator = 'concrete';
+    if (!tex.params) tex.params = {};
+    return tex;
+  }
+  function ensureTexParams(gen) {
+    var tex = getTexCfg();
+    var def = TEX_DEFAULTS[gen] || TEX_DEFAULTS.concrete;
+    for (var k in def) if (tex.params[k] === undefined) tex.params[k] = def[k];
+    return tex.params;
+  }
+
+  function hexToRgb(hex) {
+    if (typeof hex !== 'string') return null;
+    var m = hex.match(/^#([0-9a-f]{6})$/i);
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function drawWrapped(ctx, size, x, y, r, fn) {
+    for (var ox = -1; ox <= 1; ox++) {
+      for (var oy = -1; oy <= 1; oy++) {
+        var wx = x + ox * size, wy = y + oy * size;
+        if (wx + r < 0 || wx - r > size) continue;
+        if (wy + r < 0 || wy - r > size) continue;
+        fn(wx, wy);
+      }
+    }
+  }
+  function speck(ctx, size, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    if (x + w > size) ctx.fillRect(x - size, y, w, h);
+    if (y + h > size) ctx.fillRect(x, y - size, w, h);
+    if (x + w > size && y + h > size) ctx.fillRect(x - size, y - size, w, h);
+  }
+
+  // --- Генератор 1: старый бетон с границами ---
+  function paintConcrete(ctx, size, p) {
+    ctx.fillStyle = p.baseColor || '#8a8781';
+    ctx.fillRect(0, 0, size, size);
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 46;
+    var nCount = p.noiseCount != null ? p.noiseCount : 4200;
+    for (var i = 0; i < nCount; i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(120 + v);
+      ctx.fillStyle = 'rgba(' + c + ',' + c + ',' + (c - 6) + ',0.35)';
+      ctx.fillRect(Math.random() * size, Math.random() * size, 1.2, 1.2);
+    }
+    ctx.strokeStyle = p.edgeColor || 'rgba(38,34,28,0.75)';
+    ctx.lineWidth = p.edgeWidth != null ? p.edgeWidth : 5;
+    ctx.strokeRect(2.5, 2.5, size - 5, size - 5);
+    ctx.strokeStyle = p.innerEdgeColor || 'rgba(190,186,178,0.35)';
+    ctx.lineWidth = p.innerEdgeWidth != null ? p.innerEdgeWidth : 1.5;
+    ctx.strokeRect(6, 6, size - 12, size - 12);
+    var sc = p.stainCount != null ? p.stainCount : 5;
+    for (var k = 0; k < sc; k++) {
+      var x0 = Math.random() * size;
+      var wdt = 2 + Math.random() * 5;
+      var len = size * (0.25 + Math.random() * 0.65);
+      var grad = ctx.createLinearGradient(x0, 0, x0, len);
+      grad.addColorStop(0, 'rgba(126,74,38,0.35)');
+      grad.addColorStop(1, 'rgba(126,74,38,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x0, 0, wdt, len);
+    }
+    var pc = p.pitCount != null ? p.pitCount : 22;
+    for (var pi = 0; pi < pc; pi++) {
+      ctx.fillStyle = 'rgba(52,48,44,0.45)';
+      ctx.beginPath();
+      ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // --- Генератор 2: бесшовный серый бетон ---
+  function paintConcreteSmooth(ctx, size, p) {
+    ctx.fillStyle = p.baseColor || '#7d7b76';
+    ctx.fillRect(0, 0, size, size);
+
+    var bCount = p.blotchCount != null ? p.blotchCount : 16;
+    var bVar = p.blotchVariance != null ? p.blotchVariance : 30;
+    for (var i = 0; i < bCount; i++) {
+      var x = Math.random() * size;
+      var y = Math.random() * size;
+      var r = size * 0.08 + Math.random() * size * 0.18;
+      var tone = (Math.random() - 0.5) * 2 * bVar;
+      var b = Math.round(125 + tone);
+      var rc = b, gc = b, bc = b - 4;
+      (function (x, y, r, rc, gc, bc) {
+        drawWrapped(ctx, size, x, y, r, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, 'rgba(' + rc + ',' + gc + ',' + bc + ',0.22)');
+          grad.addColorStop(1, 'rgba(' + rc + ',' + gc + ',' + bc + ',0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(x, y, r, rc, gc, bc);
+    }
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 30;
+    var nCount = p.noiseCount != null ? p.noiseCount : 5000;
+    for (var j = 0; j < nCount; j++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(120 + v);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.2, 1.2,
+            'rgba(' + c + ',' + c + ',' + (c - 4) + ',0.25)');
+    }
+
+    var pc = p.pitCount != null ? p.pitCount : 25;
+    for (var k = 0; k < pc; k++) {
+      var px = Math.random() * size, py = Math.random() * size;
+      var pr = 0.7 + Math.random() * 1.6;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          ctx.fillStyle = 'rgba(52,48,44,0.4)';
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(px, py, pr);
+    }
+  }
+
+  // --- Генератор 3: коричневая земля + серый камень ---
+  function paintDirtStone(ctx, size, p) {
+    ctx.fillStyle = p.dirtColor || '#5c4230';
+    ctx.fillRect(0, 0, size, size);
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 40;
+    var nCount = p.noiseCount != null ? p.noiseCount : 8000;
+    for (var i = 0; i < nCount; i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var rc = Math.round(90 + v);
+      var gc = Math.round(64 + v * 0.85);
+      var bc = Math.round(46 + v * 0.75);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.4, 1.4,
+            'rgba(' + rc + ',' + gc + ',' + bc + ',0.35)');
+    }
+
+    for (var s = 0; s < 22; s++) {
+      var sx = Math.random() * size, sy = Math.random() * size;
+      var sr = 1 + Math.random() * 3;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, 'rgba(40,26,16,0.45)');
+          grad.addColorStop(1, 'rgba(40,26,16,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(sx, sy, sr);
+    }
+
+    var stoneBase = hexToRgb(p.stoneColor || '#8c8880') || { r: 140, g: 136, b: 128 };
+    var stoneCount = p.stoneCount != null ? p.stoneCount : 18;
+    var minR = p.stoneMinR != null ? p.stoneMinR : 4;
+    var maxR = p.stoneMaxR != null ? p.stoneMaxR : 16;
+
+    for (var st = 0; st < stoneCount; st++) {
+      var x = Math.random() * size;
+      var y = Math.random() * size;
+      var r = minR + Math.random() * (maxR - minR);
+      var vertCount = 5 + Math.floor(Math.random() * 4);
+      var verts = [];
+      for (var vv = 0; vv < vertCount; vv++) {
+        var ang = (vv / vertCount) * Math.PI * 2 + Math.random() * 0.4;
+        var rr = r * (0.7 + Math.random() * 0.4);
+        verts.push([Math.cos(ang) * rr, Math.sin(ang) * rr]);
+      }
+      var tone = (Math.random() - 0.5) * 30;
+      var srC = Math.max(0, Math.min(255, stoneBase.r + tone));
+      var sgC = Math.max(0, Math.min(255, stoneBase.g + tone));
+      var sbC = Math.max(0, Math.min(255, stoneBase.b + tone));
+      (function (x, y, r, verts, srC, sgC, sbC) {
+        drawWrapped(ctx, size, x, y, r + 2, function (cx, cy) {
+          ctx.fillStyle = 'rgba(20,14,8,0.45)';
+          ctx.beginPath();
+          for (var i2 = 0; i2 < verts.length; i2++) {
+            var vx = cx + verts[i2][0] + 1.2, vy = cy + verts[i2][1] + 1.2;
+            if (i2 === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+          }
+          ctx.closePath(); ctx.fill();
+
+          var grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+          grad.addColorStop(0, 'rgb(' + Math.round(srC + 18) + ',' + Math.round(sgC + 18) + ',' + Math.round(sbC + 18) + ')');
+          grad.addColorStop(1, 'rgb(' + Math.round(srC - 10) + ',' + Math.round(sgC - 10) + ',' + Math.round(sbC - 10) + ')');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          for (var i3 = 0; i3 < verts.length; i3++) {
+            var vx2 = cx + verts[i3][0], vy2 = cy + verts[i3][1];
+            if (i3 === 0) ctx.moveTo(vx2, vy2); else ctx.lineTo(vx2, vy2);
+          }
+          ctx.closePath(); ctx.fill();
+
+          for (var sp = 0; sp < 10; sp++) {
+            var px = cx + (Math.random() - 0.5) * r * 1.2;
+            var py = cy + (Math.random() - 0.5) * r * 1.2;
+            var sv = (Math.random() - 0.5) * 25;
+            ctx.fillStyle = 'rgba(' + Math.round(srC + sv) + ',' + Math.round(sgC + sv) + ',' + Math.round(sbC + sv) + ',0.55)';
+            ctx.fillRect(px, py, 1.2, 1.2);
+          }
+        });
+      })(x, y, r, verts, srC, sgC, sbC);
+    }
+  }
+
+  function texField(label, key, val, kind) {
+    var inputType = (kind === 'color') ? 'color' : (kind === 'number' || kind === 'int' ? 'number' : 'text');
+    var stepAttr = kind === 'number' ? 'step="0.1"' : (kind === 'int' ? 'step="1"' : '');
+    if (kind === 'color' && (typeof val !== 'string' || val.charAt(0) !== '#')) {
+      inputType = 'text';
+    }
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input type="' + inputType + '" data-ctx="texture" data-target="params" data-key="' + key + '" ' +
+      'data-kind="' + kind + '" value="' + esc(val) + '" ' + stepAttr + '></div>';
+  }
+
+  function renderTextureEditor() {
+    var tex = getTexCfg();
+    var gen = tex.generator;
+    var p = ensureTexParams(gen);
+    var h = '';
+
+    h += '<h3>Текстура блоков</h3>';
+    h += '<div class="field" style="text-align:center;">' +
+         '<canvas id="texPreview" width="160" height="160" ' +
+         'style="width:160px;height:160px;border:1px solid #3a403a;border-radius:3px;background:#0a0c0a;"></canvas>' +
+         '<div style="font-size:10px;color:#6a756a;margin-top:3px;">предпросмотр 2×2 (тайлинг)</div>' +
+         '</div>';
+
+    h += '<div class="field"><label>Тип текстуры</label>' +
+      '<select data-ctx="texture" data-target="generator">' +
+      '<option value="concrete"' + (gen === 'concrete' ? ' selected' : '') + '>1. Бетон с границами (текущая)</option>' +
+      '<option value="concreteSmooth"' + (gen === 'concreteSmooth' ? ' selected' : '') + '>2. Бесшовный серый бетон</option>' +
+      '<option value="dirtStone"' + (gen === 'dirtStone' ? ' selected' : '') + '>3. Земля + серый камень</option>' +
+      '</select></div>';
+
+    if (gen === 'concrete') {
+      h += texField('Базовый цвет', 'baseColor', p.baseColor, 'color');
+      h += texField('Шум: количество', 'noiseCount', p.noiseCount, 'int');
+      h += texField('Шум: разброс', 'noiseVariance', p.noiseVariance, 'number');
+      h += texField('Пятна: количество', 'stainCount', p.stainCount, 'int');
+      h += texField('Ямки: количество', 'pitCount', p.pitCount, 'int');
+      h += texField('Цвет границы (rgba)', 'edgeColor', p.edgeColor, 'text');
+      h += texField('Толщина границы', 'edgeWidth', p.edgeWidth, 'number');
+      h += texField('Цвет внутр. рамки', 'innerEdgeColor', p.innerEdgeColor, 'text');
+      h += texField('Толщина внутр. рамки', 'innerEdgeWidth', p.innerEdgeWidth, 'number');
+    } else if (gen === 'concreteSmooth') {
+      h += texField('Базовый цвет', 'baseColor', p.baseColor, 'color');
+      h += texField('Шум: количество', 'noiseCount', p.noiseCount, 'int');
+      h += texField('Шум: разброс', 'noiseVariance', p.noiseVariance, 'number');
+      h += texField('Пятна: количество', 'blotchCount', p.blotchCount, 'int');
+      h += texField('Пятна: разброс', 'blotchVariance', p.blotchVariance, 'number');
+      h += texField('Ямки: количество', 'pitCount', p.pitCount, 'int');
+    } else if (gen === 'dirtStone') {
+      h += texField('Цвет земли', 'dirtColor', p.dirtColor, 'color');
+      h += texField('Цвет камня', 'stoneColor', p.stoneColor, 'color');
+      h += texField('Камней: количество', 'stoneCount', p.stoneCount, 'int');
+      h += texField('Мин. радиус камня', 'stoneMinR', p.stoneMinR, 'number');
+      h += texField('Макс. радиус камня', 'stoneMaxR', p.stoneMaxR, 'number');
+      h += texField('Шум: количество', 'noiseCount', p.noiseCount, 'int');
+      h += texField('Шум: разброс', 'noiseVariance', p.noiseVariance, 'number');
+    }
+
+    h += '<p class="hint" style="margin-top:10px;">Изменения сохраняются в dungeon.js и применяются при перезапуске игры.</p>';
+    propsEl.innerHTML = h;
+    bindTextureInputs();
+    requestAnimationFrame(drawTexPreview);
+  }
+
+  function bindTextureInputs() {
+    propsEl.querySelectorAll('[data-ctx="texture"]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var target = input.getAttribute('data-target');
+        var key = input.getAttribute('data-key');
+        var kind = input.getAttribute('data-kind');
+        var tex = getTexCfg();
+        var val;
+        if (kind === 'int') val = parseInt(input.value, 10) || 0;
+        else if (kind === 'number') val = parseFloat(input.value) || 0;
+        else val = input.value;
+
+        if (target === 'generator') {
+          tex.generator = val;
+          ensureTexParams(val);
+          renderProps();
+        } else {
+          if (!tex.params) tex.params = {};
+          tex.params[key] = val;
+          drawTexPreview();
+        }
+      });
+    });
+  }
+
+  function drawTexPreview() {
+    var canvas = document.getElementById('texPreview');
+    if (!canvas) return;
+    var tex = getTexCfg();
+    var gen = tex.generator;
+    var p = tex.params || {};
+    var size = p.size || 128;
+
+    var src = document.createElement('canvas');
+    src.width = src.height = size;
+    var sctx = src.getContext('2d');
+    if (gen === 'concreteSmooth') paintConcreteSmooth(sctx, size, p);
+    else if (gen === 'dirtStone') paintDirtStone(sctx, size, p);
+    else paintConcrete(sctx, size, p);
+
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 160, 160);
+    var tile = 80;
+    for (var ty = 0; ty < 2; ty++) {
+      for (var tx = 0; tx < 2; tx++) {
+        ctx.drawImage(src, tx * tile, ty * tile, tile, tile);
+      }
+    }
+  }
+
   function bindLevelInputs(lv) {
     if (!lv) return;
     propsEl.querySelectorAll('[data-ctx="level"]').forEach(function (input) {
@@ -840,6 +1201,86 @@
         redraw();
       });
     });
+  }
+
+  function bindWorldInputs() {
+    propsEl.querySelectorAll('[data-ctx="world"]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var key = input.getAttribute('data-key'); // size.x, size.y, size.z
+        var val = parseInt(input.value, 10);
+        if (isNaN(val) || val < 16) val = 16;
+        var parts = key.split('.');
+        if (parts.length === 2 && parts[0] === 'size') {
+          cfg.world.size[parts[1]] = val;
+        }
+        redraw();
+      });
+    });
+    var fitBtn = propsEl.querySelector('#btnFitWorld');
+    if (fitBtn) {
+      fitBtn.addEventListener('click', function () {
+        expandWorldToFit();
+      });
+    }
+  }
+
+  function expandWorldToFit() {
+    var minX = Infinity, maxX = -Infinity;
+    var minZ = Infinity, maxZ = -Infinity;
+
+    function consider(x, z) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+
+    cfg.tunnels.forEach(function (t) { consider(t.from[0], t.from[1]); consider(t.to[0], t.to[1]); });
+    cfg.junctions.forEach(function (j) { consider(j.at[0], j.at[1]); });
+    cfg.rooms.forEach(function (r) {
+      consider(r.center[0] - r.size[0]/2, r.center[1] - r.size[1]/2);
+      consider(r.center[0] + r.size[0]/2, r.center[1] + r.size[1]/2);
+    });
+    cfg.shafts.forEach(function (s) { consider(s.at[0], s.at[1]); });
+    cfg.oreSources.forEach(function (o) { consider(o.at[0], o.at[1]); });
+    cfg.carts.forEach(function (c) { consider(c.at[0], c.at[1]); });
+    if (cfg.start) consider(cfg.start.at[0], cfg.start.at[1]);
+
+    if (!isFinite(minX)) { setStatus('Нет элементов для расширения'); return; }
+
+    var margin = 8;
+    var shiftX = (minX < margin) ? (margin - minX) : 0;
+    var shiftZ = (minZ < margin) ? (margin - minZ) : 0;
+
+    var needsExpand = (shiftX > 0 || shiftZ > 0 || maxX + margin > cfg.world.size.x || maxZ + margin > cfg.world.size.z);
+    if (!needsExpand) {
+      setStatus('Мир уже достаточно большой');
+      return;
+    }
+
+    function shiftCoord(arr) {
+      arr[0] += shiftX;
+      arr[1] += shiftZ;
+    }
+
+    cfg.tunnels.forEach(function (t) { shiftCoord(t.from); shiftCoord(t.to); });
+    cfg.junctions.forEach(function (j) { shiftCoord(j.at); });
+    cfg.rooms.forEach(function (r) { shiftCoord(r.center); });
+    cfg.shafts.forEach(function (s) { shiftCoord(s.at); });
+    cfg.oreSources.forEach(function (o) { shiftCoord(o.at); });
+    cfg.carts.forEach(function (c) { shiftCoord(c.at); });
+    if (cfg.start) shiftCoord(cfg.start.at);
+
+    var newWidth = Math.ceil(maxX + shiftX + margin);
+    var newDepth = Math.ceil(maxZ + shiftZ + margin);
+
+    cfg.world.size.x = Math.max(cfg.world.size.x, newWidth);
+    cfg.world.size.z = Math.max(cfg.world.size.z, newDepth);
+
+    setStatus('Мир расширен до ' + cfg.world.size.x + ' × ' + cfg.world.size.z);
+    renderProps();
+    fitView();
+    redraw();
   }
 
   function bindObjectInputs(obj) {
