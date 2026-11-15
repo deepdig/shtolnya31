@@ -3,34 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Урановые рудники — 3D симулятор</title>
+<title>Штольня — 3D симулятор</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #050604; }
   body { font-family: "Segoe UI", Roboto, Arial, sans-serif; color: #d8d8c8; user-select: none; }
-
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
-
   #crosshair {
     position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
     transform: translate(-50%, -50%); border-radius: 50%;
     background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 6px rgba(160,255,170,0.8);
+    transition: background 0.15s, box-shadow 0.15s;
   }
-
   .panel {
     position: absolute; background: rgba(0, 0, 0, 0.55);
     border: 1px solid rgba(120, 160, 120, 0.35); border-radius: 8px; padding: 10px 14px;
     backdrop-filter: blur(3px);
   }
-
   #radPanel { left: 16px; top: 16px; min-width: 200px; }
   #radPanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
   #radValue { font-size: 26px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
   #radBarWrap { width: 100%; height: 8px; background: #1a1f1a; border-radius: 4px; margin-top: 8px; overflow: hidden; }
   #radBar { height: 100%; width: 0%; background: linear-gradient(90deg, #55d455, #e0c040, #e05540); transition: width 0.1s linear; }
-
   #dosePanel { right: 16px; top: 16px; width: 240px; }
   #dosePanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
   #doseValue { font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -38,7 +33,6 @@
   #doseBar { height: 100%; width: 0%; background: linear-gradient(90deg, #2f6f2f, #c9a13a, #d23b2b); }
   #doseBar.warn { animation: pulse 0.8s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
-
   #depthPanel { left: 16px; bottom: 16px; min-width: 190px; }
   #depthPanel .label { font-size: 11px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; }
   #depthValue { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -48,32 +42,17 @@
     border-top: 1px solid rgba(120,160,120,0.25); padding-top: 6px;
     font-variant-numeric: tabular-nums; letter-spacing: 0.5px;
   }
-
   #mapPanel { right: 16px; bottom: 16px; padding: 8px 8px 7px; }
-  #mapPanel .label {
-    font-size: 10px; letter-spacing: 2px; color: #8f9a8f;
-    text-transform: uppercase; text-align: center; margin-bottom: 5px;
-  }
-  #minimap {
-    display: block; width: 190px; height: 190px; border-radius: 6px;
-    background: #060a07; border: 1px solid rgba(90,120,90,0.3);
-  }
-  #mapLegend {
-    display: flex; flex-wrap: wrap; justify-content: space-between;
-    margin-top: 5px; font-size: 8px; letter-spacing: 0.5px; color: #77857a;
-  }
+  #mapPanel .label { font-size: 10px; letter-spacing: 2px; color: #8f9a8f; text-transform: uppercase; text-align: center; margin-bottom: 5px; }
+  #minimap { display: block; width: 190px; height: 190px; border-radius: 6px; background: #060a07; border: 1px solid rgba(90,120,90,0.3); }
+  #mapLegend { display: flex; flex-wrap: wrap; justify-content: space-between; margin-top: 5px; font-size: 8px; letter-spacing: 0.5px; color: #77857a; }
   #mapLegend span { white-space: nowrap; }
-  #mapLegend .sw {
-    display: inline-block; width: 7px; height: 7px; border-radius: 2px;
-    margin-right: 2px; vertical-align: middle;
-  }
-
+  #mapLegend .sw { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 2px; vertical-align: middle; }
   #hint {
     position: absolute; left: 50%; top: 60%; transform: translateX(-50%);
     background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 6px;
     font-size: 14px; color: #cfe8cf; display: none; letter-spacing: 1px;
   }
-
   #pickupHint {
     position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%);
     background: rgba(20, 60, 26, 0.75); padding: 6px 14px; border-radius: 6px;
@@ -82,7 +61,14 @@
     opacity: 0; transition: opacity 0.25s;
   }
   #pickupHint.show { opacity: 1; }
-
+  #ladderHint {
+    position: absolute; left: 50%; bottom: 30%; transform: translateX(-50%);
+    background: rgba(60, 60, 20, 0.75); padding: 5px 14px; border-radius: 5px;
+    font-size: 12px; color: #e8e8a0; letter-spacing: 1px;
+    border: 1px solid rgba(220, 220, 100, 0.35);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  #ladderHint.show { opacity: 1; }
   .overlay {
     position: fixed; inset: 0; z-index: 20; display: flex;
     align-items: center; justify-content: center; flex-direction: column;
@@ -90,14 +76,9 @@
     text-align: center;
   }
   .overlay.hidden { display: none; }
-
-  .overlay h1 {
-    font-size: 34px; letter-spacing: 6px; margin-bottom: 8px;
-    color: #cfe8cf; text-shadow: 0 0 18px rgba(120, 230, 130, 0.45);
-  }
+  .overlay h1 { font-size: 34px; letter-spacing: 6px; margin-bottom: 8px; color: #cfe8cf; text-shadow: 0 0 18px rgba(120, 230, 130, 0.45); }
   .overlay h2 { font-size: 22px; margin-bottom: 16px; color: #e05540; letter-spacing: 3px; }
-  .overlay p { max-width: 580px; line-height: 1.6; color: #aab5aa; font-size: 14px; margin-bottom: 8px; }
-
+  .overlay p { max-width: 620px; line-height: 1.6; color: #aab5aa; font-size: 14px; margin-bottom: 8px; }
   .btn {
     margin-top: 22px; padding: 14px 42px; font-size: 18px; letter-spacing: 3px;
     background: #2f6f2f; color: #e8ffe8; border: 1px solid #55a055;
@@ -105,10 +86,9 @@
   }
   .btn:hover { background: #3d8a3d; transform: scale(1.03); }
   .btn:active { transform: scale(0.98); }
-
+  .btn[disabled] { opacity: 0.5; cursor: default; }
   .keys { margin-top: 18px; font-size: 13px; color: #8f9a8f; line-height: 1.9; }
   .keys b { color: #cfe8cf; font-weight: 600; }
-
   #deadStats { font-size: 15px; color: #e0c040; margin-top: 6px; font-variant-numeric: tabular-nums; line-height: 1.7; }
 </style>
 </head>
@@ -135,7 +115,7 @@
     <div id="oreValue">Руда: 0 / 0</div>
   </div>
   <div id="mapPanel" class="panel">
-    <div class="label">3D-карта шахты</div>
+    <div class="label">3D-карта штольни</div>
     <canvas id="minimap" width="190" height="190"></canvas>
     <div id="mapLegend">
       <span><i class="sw" style="background:#163a1e"></i>ниже</span>
@@ -146,17 +126,17 @@
   </div>
   <div id="hint">Нажмите, чтобы продолжить</div>
   <div id="pickupHint">+1 руда</div>
+  <div id="ladderHint">W — вверх · S — вниз · A/D — сойти</div>
 </div>
 
 <div id="overlayStart" class="overlay">
-  <h1>УРАНОВЫЕ РУДНИКИ</h1>
-  <p>Каждый горизонт шахты — станция на спиральном уклоне с ответвлениями: квершлаги ведут к залам, прямоугольным техническим камерам и рудным телам, а вертикальные стволы соединяют горизонты.</p>
-  <p>Цель: пройти как можно глубже, не получив смертельную дозу радиации. Держитесь подальше от светящихся зелёных кристаллов и не задерживайтесь в забоях.</p>
-  <p style="color:#8fc78f">На полу разбросаны светящиеся кристаллы руды — подходите к ним, чтобы собрать. Таблички на стенах укажут назначение выработок.</p>
+  <h1>ШТОЛЬНЯ</h1>
+  <p>Горизонтальные выработки с бетонной крепью: длинные штреки, квершлаги, камеры и тупики. Рельсовые пути и вагонетки. Несколько горизонтов соединены вертикальными шахтами — часть с лестницами, часть пустая.</p>
+  <p style="color:#8fc78f">На лестнице: <b>W</b> — вверх, <b>S</b> — вниз, <b>A/D</b> — сойти в сторону. Смертельная доза — 100%.</p>
   <div class="keys">
     <b>W A S D / стрелки</b> — движение &nbsp;·&nbsp; <b>Мышь</b> — осмотр &nbsp;·&nbsp; <b>Пробел</b> — прыжок &nbsp;·&nbsp; <b>Shift</b> — бег
   </div>
-  <button id="btnStart" class="btn">НАЧАТЬ</button>
+  <button id="btnStart" class="btn" disabled>ЗАГРУЗКА...</button>
 </div>
 
 <div id="overlayDead" class="overlay hidden">
@@ -168,15 +148,17 @@
 </div>
 
 <script src="js/three.min.js"></script>
+<script src="maps/shtolnya41.js"></script>
 <script>
 (function () {
   "use strict";
 
-  /* ============================================================
-     Константы
-     ============================================================ */
-  var WORLD_W = 96, WORLD_H = 64, WORLD_D = 96;
-  var ENTRANCE_Y = WORLD_H - 3;
+  // ============================================================
+  //  КОНФИГУРАЦИЯ (заполняется из dungeon.js)
+  // ============================================================
+  var CONFIG = null;
+
+  var WORLD_W = 96, WORLD_H = 72, WORLD_D = 96;
   var PLAYER_RADIUS = 0.32;
   var PLAYER_HEIGHT = 1.7;
   var PLAYER_EYE = 1.6;
@@ -185,34 +167,61 @@
   var RUN_SPEED = 7.0;
   var GRAVITY = 20;
   var JUMP_VEL = 8.5;
+  var CLIMB_SPEED = 3.2;
   var DOSE_CRITICAL = 100;
   var DOSE_FACTOR = 0.0022;
   var RECOVER_RATE = 3.0;
-  var JITTER = 0.22;
+  var RAD_BASE = 0.15;
+  var RAD_PER_M = 0.04;
+  var RAD_RECOVER_THRESHOLD = 0.8;
   var ORE_PICKUP_RADIUS = 1.5;
   var ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
+  var ORE_MAX_ITEMS = 90;
+  var TUNNEL_HEIGHT = 3;
+  var CENTER_X = 48, CENTER_Z = 48;
+  var ENTRANCE_Y = 64;
+  var JITTER = 0.02;
 
-  /* ============================================================
-     Three.js
-     ============================================================ */
+  var grid = null;
+  var sources = [];
+  var signRequests = [];
+  var railSegments = [];
+  var cartPlacements = [];
+  var diagonalRails = []; // сюда будем складывать рельсы для диагональных туннелей
+  var startPos = null;
+
+  var stoneMesh = null, uranMesh = null, crystalMesh = null, railMesh = null, ladderMesh = null;
+  var concreteTex = null;
+  var stoneMat, uranMat, crystalMat, railMat, ladderMat;
+
+  var PLAYER = {
+    pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+    yaw: 0, pitch: 0, onGround: false, onLadder: false, dose: 0, maxDepth: 0
+  };
+  var keys = {};
+  var gameState = "menu";
+  var gameTime = 0;
+
+  // ============================================================
+  //  Сцена
+  // ============================================================
   var canvas = document.getElementById("game");
   var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0c0a);
-  scene.fog = new THREE.FogExp2(0x0a0c0a, 0.045);
+  scene.background = new THREE.Color(0x08090a);
+  scene.fog = new THREE.FogExp2(0x08090a, 0.038);
 
-  var camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 200);
+  var camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, 220);
   camera.rotation.order = "YXZ";
 
-  var ambient = new THREE.AmbientLight(0x9a9a92, 0.4);
-  scene.add(ambient);
+  scene.add(new THREE.AmbientLight(0x8c8a84, 0.42));
 
   var flashTarget = new THREE.Object3D();
   scene.add(flashTarget);
-  var flash = new THREE.SpotLight(0xfff0d0, 1.9, 40, 0.55, 0.45, 1.2);
+  var flash = new THREE.SpotLight(0xfff2d8, 2.1, 45, 0.55, 0.45, 1.2);
   flash.target = flashTarget;
   scene.add(flash);
 
@@ -222,80 +231,295 @@
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
-  /* ============================================================
-     Текстуры
-     ============================================================ */
-  function makeNoiseCanvas(size, seed) {
-    var data = new Uint8ClampedArray(size * size * 4);
-    function hash(x, y) {
-      var h = seed ^ (x * 374761393) ^ (y * 668265263);
-      h = (h ^ (h >> 13)) * 1274126177;
-      return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+  // ============================================================
+  //  Загрузка конфигурации
+  // ============================================================
+  function loadDungeon(url) {
+    // 1) Если dungeon.js подключён через <script> — используем его.
+    //    Это работает и в file:// (без сервера), и в http://.
+    if (window.DUNGEON_CONFIG) {
+      return Promise.resolve(window.DUNGEON_CONFIG);
     }
-    function smooth(t) { return t * t * (3 - 2 * t); }
-    function noise2(x, y) {
-      var xi = Math.floor(x), yi = Math.floor(y);
-      var xf = x - xi, yf = y - yi;
-      var a = hash(xi, yi), b = hash(xi + 1, yi);
-      var c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
-      var u = smooth(xf), v = smooth(yf);
-      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-    }
-    for (var y = 0; y < size; y++) {
-      for (var x = 0; x < size; x++) {
-        var n = 0, amp = 1, fx = 1, total = 0;
-        for (var o = 0; o < 4; o++) {
-          n += noise2((x / size) * 5 * fx, (y / size) * 5 * fx) * amp;
-          total += amp; amp *= 0.5; fx *= 2;
-        }
-        n /= total;
-        var i = (y * size + x) * 4;
-        data[i] = 66 + n * 60; data[i+1] = 62 + n * 56; data[i+2] = 58 + n * 52; data[i+3] = 255;
-      }
-    }
-    return data;
+    // 2) Иначе — пробуем fetch (актуально только для http://).
+    return fetch(url, { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status + " — не удалось прочитать " + url);
+      return r.json();
+    });
   }
 
-  function makeStoneTexture() {
-    var size = 128;
+  function applyConfig(cfg) {
+    CONFIG = cfg;
+
+    var w = cfg.world;
+    WORLD_W = w.size.x;
+    WORLD_H = w.size.y;
+    WORLD_D = w.size.z;
+    TUNNEL_HEIGHT = w.tunnelHeight;
+    CENTER_X = Math.floor(WORLD_W / 2);
+    CENTER_Z = Math.floor(WORLD_D / 2);
+
+    var ph = cfg.physics;
+    PLAYER_RADIUS = ph.playerRadius;
+    PLAYER_HEIGHT = ph.playerHeight;
+    PLAYER_EYE = ph.playerEye;
+    STEP_HEIGHT = ph.stepHeight;
+    WALK_SPEED = ph.walkSpeed;
+    RUN_SPEED = ph.runSpeed;
+    GRAVITY = ph.gravity;
+    JUMP_VEL = ph.jumpVelocity;
+    CLIMB_SPEED = ph.climbSpeed;
+
+    var rad = cfg.radiation;
+    DOSE_CRITICAL = rad.criticalDose;
+    DOSE_FACTOR = rad.doseFactor;
+    RECOVER_RATE = rad.recoverRate;
+    RAD_BASE = rad.backgroundBase;
+    RAD_PER_M = rad.backgroundPerMeter;
+    RAD_RECOVER_THRESHOLD = rad.recoverThreshold;
+
+    ORE_PICKUP_RADIUS = cfg.ore.pickupRadius;
+    ORE_PICKUP_RADIUS2 = ORE_PICKUP_RADIUS * ORE_PICKUP_RADIUS;
+    ORE_MAX_ITEMS = cfg.ore.maxItems || 90;
+
+    ENTRANCE_Y = cfg.levels[0].y;
+  }
+
+  function buildMaterials(cfg) {
+    concreteTex = makeConcreteTexture(cfg.textures.concrete);
+    var m = cfg.materials;
+    stoneMat = new THREE.MeshLambertMaterial({ map: concreteTex, vertexColors: true, side: THREE.DoubleSide });
+    uranMat = new THREE.MeshLambertMaterial({
+      map: concreteTex,
+      color: new THREE.Color(m.uranium.color),
+      emissive: new THREE.Color(m.uranium.emissive),
+      emissiveIntensity: m.uranium.emissiveIntensity,
+      vertexColors: true, side: THREE.DoubleSide
+    });
+    crystalMat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color(m.crystal.color),
+      emissive: new THREE.Color(m.crystal.emissive),
+      emissiveIntensity: m.crystal.emissiveIntensity,
+      vertexColors: true
+    });
+    railMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    ladderMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  }
+
+  // ============================================================
+  //  Процедурная текстура (параметризованная)
+  // ============================================================
+  function hexToRgb(hex) {
+    if (typeof hex !== 'string') return null;
+    var m = hex.match(/^#([0-9a-f]{6})$/i);
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function drawWrapped(ctx, size, x, y, r, fn) {
+    for (var ox = -1; ox <= 1; ox++) {
+      for (var oy = -1; oy <= 1; oy++) {
+        var wx = x + ox * size, wy = y + oy * size;
+        if (wx + r < 0 || wx - r > size) continue;
+        if (wy + r < 0 || wy - r > size) continue;
+        fn(wx, wy);
+      }
+    }
+  }
+  function speck(ctx, size, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    if (x + w > size) ctx.fillRect(x - size, y, w, h);
+    if (y + h > size) ctx.fillRect(x, y - size, w, h);
+    if (x + w > size && y + h > size) ctx.fillRect(x - size, y - size, w, h);
+  }
+
+  // Генератор 1: бетон с границами (как раньше)
+  function paintConcrete(ctx, size, p) {
+    ctx.fillStyle = p.baseColor || "#8a8781";
+    ctx.fillRect(0, 0, size, size);
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 46;
+    var nCount = p.noiseCount != null ? p.noiseCount : 4200;
+    for (var i = 0; i < nCount; i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(120 + v);
+      ctx.fillStyle = "rgba(" + c + "," + c + "," + (c - 6) + ",0.35)";
+      ctx.fillRect(Math.random() * size, Math.random() * size, 1.2, 1.2);
+    }
+    ctx.strokeStyle = p.edgeColor || "rgba(38,34,28,0.75)";
+    ctx.lineWidth = p.edgeWidth != null ? p.edgeWidth : 5;
+    ctx.strokeRect(2.5, 2.5, size - 5, size - 5);
+    ctx.strokeStyle = p.innerEdgeColor || "rgba(190,186,178,0.35)";
+    ctx.lineWidth = p.innerEdgeWidth != null ? p.innerEdgeWidth : 1.5;
+    ctx.strokeRect(6, 6, size - 12, size - 12);
+    var sc = p.stainCount != null ? p.stainCount : 5;
+    for (var k = 0; k < sc; k++) {
+      var x0 = Math.random() * size;
+      var wdt = 2 + Math.random() * 5;
+      var len = size * (0.25 + Math.random() * 0.65);
+      var grad = ctx.createLinearGradient(x0, 0, x0, len);
+      grad.addColorStop(0, "rgba(126,74,38,0.35)");
+      grad.addColorStop(1, "rgba(126,74,38,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(x0, 0, wdt, len);
+    }
+    var pc = p.pitCount != null ? p.pitCount : 22;
+    for (var pi = 0; pi < pc; pi++) {
+      ctx.fillStyle = "rgba(52,48,44,0.45)";
+      ctx.beginPath();
+      ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Генератор 2: бесшовный серый бетон
+  function paintConcreteSmooth(ctx, size, p) {
+    ctx.fillStyle = p.baseColor || "#7d7b76";
+    ctx.fillRect(0, 0, size, size);
+
+    var bCount = p.blotchCount != null ? p.blotchCount : 16;
+    var bVar = p.blotchVariance != null ? p.blotchVariance : 30;
+    for (var i = 0; i < bCount; i++) {
+      var x = Math.random() * size, y = Math.random() * size;
+      var r = size * 0.08 + Math.random() * size * 0.18;
+      var tone = (Math.random() - 0.5) * 2 * bVar;
+      var b = Math.round(125 + tone);
+      var rc = b, gc = b, bc = b - 4;
+      (function (x, y, r, rc, gc, bc) {
+        drawWrapped(ctx, size, x, y, r, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, "rgba(" + rc + "," + gc + "," + bc + ",0.22)");
+          grad.addColorStop(1, "rgba(" + rc + "," + gc + "," + bc + ",0)");
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(x, y, r, rc, gc, bc);
+    }
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 30;
+    var nCount = p.noiseCount != null ? p.noiseCount : 5000;
+    for (var j = 0; j < nCount; j++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var c = Math.round(120 + v);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.2, 1.2,
+            "rgba(" + c + "," + c + "," + (c - 4) + ",0.25)");
+    }
+
+    var pc = p.pitCount != null ? p.pitCount : 25;
+    for (var k = 0; k < pc; k++) {
+      var px = Math.random() * size, py = Math.random() * size;
+      var pr = 0.7 + Math.random() * 1.6;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          ctx.fillStyle = "rgba(52,48,44,0.4)";
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(px, py, pr);
+    }
+  }
+
+  // Генератор 3: земля + серый камень
+  function paintDirtStone(ctx, size, p) {
+    ctx.fillStyle = p.dirtColor || "#5c4230";
+    ctx.fillRect(0, 0, size, size);
+
+    var nVar = p.noiseVariance != null ? p.noiseVariance : 40;
+    var nCount = p.noiseCount != null ? p.noiseCount : 8000;
+    for (var i = 0; i < nCount; i++) {
+      var v = Math.random() * nVar - nVar / 2;
+      var rc = Math.round(90 + v);
+      var gc = Math.round(64 + v * 0.85);
+      var bc = Math.round(46 + v * 0.75);
+      speck(ctx, size, Math.random() * size, Math.random() * size, 1.4, 1.4,
+            "rgba(" + rc + "," + gc + "," + bc + ",0.35)");
+    }
+
+    for (var s = 0; s < 22; s++) {
+      var sx = Math.random() * size, sy = Math.random() * size;
+      var sr = 1 + Math.random() * 3;
+      (function (x, y, r) {
+        drawWrapped(ctx, size, x, y, r + 1, function (cx, cy) {
+          var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          grad.addColorStop(0, "rgba(40,26,16,0.45)");
+          grad.addColorStop(1, "rgba(40,26,16,0)");
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        });
+      })(sx, sy, sr);
+    }
+
+    var stoneBase = hexToRgb(p.stoneColor || "#8c8880") || { r: 140, g: 136, b: 128 };
+    var stoneCount = p.stoneCount != null ? p.stoneCount : 18;
+    var minR = p.stoneMinR != null ? p.stoneMinR : 4;
+    var maxR = p.stoneMaxR != null ? p.stoneMaxR : 16;
+
+    for (var st = 0; st < stoneCount; st++) {
+      var x = Math.random() * size, y = Math.random() * size;
+      var r = minR + Math.random() * (maxR - minR);
+      var vertCount = 5 + Math.floor(Math.random() * 4);
+      var verts = [];
+      for (var vv = 0; vv < vertCount; vv++) {
+        var ang = (vv / vertCount) * Math.PI * 2 + Math.random() * 0.4;
+        var rr = r * (0.7 + Math.random() * 0.4);
+        verts.push([Math.cos(ang) * rr, Math.sin(ang) * rr]);
+      }
+      var tone = (Math.random() - 0.5) * 30;
+      var srC = Math.max(0, Math.min(255, stoneBase.r + tone));
+      var sgC = Math.max(0, Math.min(255, stoneBase.g + tone));
+      var sbC = Math.max(0, Math.min(255, stoneBase.b + tone));
+      (function (x, y, r, verts, srC, sgC, sbC) {
+        drawWrapped(ctx, size, x, y, r + 2, function (cx, cy) {
+          ctx.fillStyle = "rgba(20,14,8,0.45)";
+          ctx.beginPath();
+          for (var i2 = 0; i2 < verts.length; i2++) {
+            var vx = cx + verts[i2][0] + 1.2, vy = cy + verts[i2][1] + 1.2;
+            if (i2 === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+          }
+          ctx.closePath(); ctx.fill();
+
+          var grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+          grad.addColorStop(0, "rgb(" + Math.round(srC + 18) + "," + Math.round(sgC + 18) + "," + Math.round(sbC + 18) + ")");
+          grad.addColorStop(1, "rgb(" + Math.round(srC - 10) + "," + Math.round(sgC - 10) + "," + Math.round(sbC - 10) + ")");
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          for (var i3 = 0; i3 < verts.length; i3++) {
+            var vx2 = cx + verts[i3][0], vy2 = cy + verts[i3][1];
+            if (i3 === 0) ctx.moveTo(vx2, vy2); else ctx.lineTo(vx2, vy2);
+          }
+          ctx.closePath(); ctx.fill();
+
+          for (var sp = 0; sp < 10; sp++) {
+            var px = cx + (Math.random() - 0.5) * r * 1.2;
+            var py = cy + (Math.random() - 0.5) * r * 1.2;
+            var sv = (Math.random() - 0.5) * 25;
+            ctx.fillStyle = "rgba(" + Math.round(srC + sv) + "," + Math.round(sgC + sv) + "," + Math.round(sbC + sv) + ",0.55)";
+            ctx.fillRect(px, py, 1.2, 1.2);
+          }
+        });
+      })(x, y, r, verts, srC, sgC, sbC);
+    }
+  }
+
+  function makeConcreteTexture(texCfg) {
+    var p = (texCfg && texCfg.params) || {};
+    var gen = (texCfg && texCfg.generator) || 'concrete';
+    var size = p.size || 128;
     var cv = document.createElement("canvas");
     cv.width = cv.height = size;
     var ctx = cv.getContext("2d");
-    var img = ctx.createImageData(size, size);
-    img.data.set(makeNoiseCanvas(size, 1337));
-    ctx.putImageData(img, 0, 0);
-    ctx.strokeStyle = "rgba(18,16,14,0.55)";
-    for (var i = 0; i < 18; i++) {
-      ctx.beginPath();
-      var x = Math.random() * size, y = Math.random() * size;
-      ctx.moveTo(x, y);
-      for (var j = 0; j < 5; j++) {
-        x += (Math.random() - 0.5) * 30; y += (Math.random() - 0.5) * 30;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.fillStyle = "rgba(190,190,175,0.10)";
-    for (var k = 0; k < 90; k++) {
-      ctx.fillRect(Math.random()*size, Math.random()*size, 1+Math.random()*2, 1+Math.random()*2);
-    }
+
+    if (gen === 'concreteSmooth')      paintConcreteSmooth(ctx, size, p);
+    else if (gen === 'dirtStone')      paintDirtStone(ctx, size, p);
+    else                                paintConcrete(ctx, size, p);
+
     var tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 4;
     return tex;
   }
 
-  var stoneTex = makeStoneTexture();
-
-  var stoneMat = new THREE.MeshLambertMaterial({ map: stoneTex, vertexColors: true, side: THREE.DoubleSide });
-  var uranMat = new THREE.MeshLambertMaterial({
-    map: stoneTex, color: 0x8fae8c, emissive: 0x1d5a1d, emissiveIntensity: 0.75,
-    vertexColors: true, side: THREE.DoubleSide
-  });
-  var crystalMat = new THREE.MeshLambertMaterial({
-    color: 0x123a16, emissive: 0x59ff7d, emissiveIntensity: 1.0, vertexColors: true
-  });
-
+  // ============================================================
+  //  Утилиты
+  // ============================================================
   function hash3(x, y, z, s) {
     var n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^
             Math.imul(z | 0, 1274126177) ^ Math.imul(s | 0, 2246822519);
@@ -303,253 +527,371 @@
     n ^= n >>> 16;
     return (n >>> 0) / 4294967295;
   }
-
-  /* ============================================================
-     Генерация
-     ============================================================ */
-  var grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
-  var sources = [];
-  var spiralPath = [];
-  var branchStarts = [];
-  var signRequests = [];
-  var oreNodes = [];
-
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
   function gIdx(x, y, z) { return x + WORLD_W * (y + WORLD_H * z); }
+  function isLadder(x, y, z) {
+    if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return false;
+    return grid[gIdx(x, y, z)] === 3;
+  }
   function solidAt(x, y, z) {
     if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return true;
-    return grid[gIdx(x, y, z)] !== 0;
+    var v = grid[gIdx(x, y, z)];
+    return v === 1 || v === 2;
   }
-  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function setAir(x, y, z) {
+    if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) return;
+    grid[gIdx(x, y, z)] = 0;
+  }
 
-  function carveSphere(cx, cy, cz, r) {
-    var r2 = r * r;
-    var x0 = Math.floor(cx-r), x1 = Math.ceil(cx+r);
-    var y0 = Math.floor(cy-r), y1 = Math.ceil(cy+r);
-    var z0 = Math.floor(cz-r), z1 = Math.ceil(cz+r);
-    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
-      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
-      var dx = x-cx, dy = y-cy, dz = z-cz;
-      if (dx*dx + dy*dy + dz*dz <= r2) grid[gIdx(x,y,z)] = 0;
+  // ============================================================
+  //  Вырезание в воксельной сетке
+  // ============================================================
+  function carveTrapezoidX(x0, x1, zc, yFloor, floorW, ceilW, height) {
+    var xMin = Math.floor(Math.min(x0, x1)), xMax = Math.ceil(Math.max(x0, x1));
+    for (var x = xMin; x <= xMax; x++) {
+      for (var h = 0; h < height; h++) {
+        var t = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * t;
+        var halfW = w / 2;
+        var y = yFloor + h;
+        var z0 = Math.floor(zc - halfW), z1 = Math.ceil(zc + halfW);
+        for (var z = z0; z <= z1; z++) setAir(x, y, z);
+      }
     }
   }
-
-  /* Прямоугольная камера: карвим бокс по целочисленным границам */
-  function carveBox(x0, y0, z0, x1, y1, z1) {
-    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
-      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
-      grid[gIdx(x,y,z)] = 0;
+  function carveTrapezoidZ(z0, z1, xc, yFloor, floorW, ceilW, height) {
+    var zMin = Math.floor(Math.min(z0, z1)), zMax = Math.ceil(Math.max(z0, z1));
+    for (var z = zMin; z <= zMax; z++) {
+      for (var h = 0; h < height; h++) {
+        var t = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * t;
+        var halfW = w / 2;
+        var y = yFloor + h;
+        var x0i = Math.floor(xc - halfW), x1i = Math.ceil(xc + halfW);
+        for (var x = x0i; x <= x1i; x++) setAir(x, y, z);
+      }
     }
   }
+  function carveBoxAir(x0, y0, z0, x1, y1, z1) {
+    for (var x = Math.max(0, x0); x <= Math.min(WORLD_W - 1, x1); x++)
+      for (var y = Math.max(0, y0); y <= Math.min(WORLD_H - 1, y1); y++)
+        for (var z = Math.max(0, z0); z <= Math.min(WORLD_D - 1, z1); z++)
+          grid[gIdx(x, y, z)] = 0;
+  }
+  function carveJunction(x, yFloor, z, floorW, height) {
+    var hw = Math.ceil(floorW / 2);
+    for (var h = 0; h < height; h++) {
+      var y = yFloor + h;
+      for (var dx = -hw; dx <= hw; dx++) {
+        for (var dz = -hw; dz <= hw; dz++) {
+          if (dx * dx + dz * dz <= hw * hw + 1) {
+            setAir(Math.round(x + dx), y, Math.round(z + dz));
+          }
+        }
+      }
+    }
+  }
+  function carveRoom(cx, cz, yFloor, w, d, h) {
+    var x0 = cx - Math.floor(w / 2), x1 = x0 + w - 1;
+    var z0 = cz - Math.floor(d / 2), z1 = z0 + d - 1;
+    carveBoxAir(x0, yFloor, z0, x1, yFloor + h - 1, z1);
+    for (var hh = Math.floor(h / 2); hh < h; hh++) {
+      var y = yFloor + hh;
+      setAir(x0, y, z0); setAir(x1, y, z0);
+      setAir(x0, y, z1); setAir(x1, y, z1);
+    }
+  }
+  function carveShaft(cx, cz, yTop, yBot, size, withLadder) {
+    var half = Math.floor(size / 2);
+    carveBoxAir(cx - half, yBot, cz - half, cx + half, yTop, cz + half);
+    if (withLadder) {
+      for (var y = yBot; y <= yTop; y++) {
+        for (var x = cx - half; x <= cx + half; x++) {
+          for (var z = cz - half; z <= cz + half; z++) {
+            if (grid[gIdx(x, y, z)] === 0) grid[gIdx(x, y, z)] = 3;
+          }
+        }
+      }
+    }
+  }
+  function carveOreSphere(cx, cy, cz, r) {
+    var count = 0;
+    var x0 = Math.floor(cx - r), x1 = Math.ceil(cx + r);
+    var y0 = Math.floor(cy - r), y1 = Math.ceil(cy + r);
+    var z0 = Math.floor(cz - r), z1 = Math.ceil(cz + r);
+    for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
+      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H || z < 0 || z >= WORLD_D) continue;
+      var dx = x + 0.5 - cx, dy = y + 0.5 - cy, dz = z + 0.5 - cz;
+      if (dx * dx + dy * dy + dz * dz > r * r) continue;
+      if (grid[gIdx(x, y, z)] === 1) {
+        grid[gIdx(x, y, z)] = 2;
+        count++;
+      }
+    }
+    return count;
+  }
 
-  function carveLine(x0, y0, z0, x1, y1, z1, r) {
-    var len = Math.sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0)+(z1-z0)*(z1-z0));
-    var steps = Math.max(1, Math.ceil(len / 0.6));
+    // Туннель по произвольной прямой (для диагоналей).
+  function carveTunnelLine(x0, z0, x1, z1, yFloor, floorW, ceilW, height) {
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 0.5) {
+      // Вырожденный — просто круг в точке
+      var halfW0 = floorW / 2;
+      for (var h = 0; h < height; h++) {
+        var t = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * t;
+        for (var ix = Math.floor(x0 - w); ix <= Math.ceil(x0 + w); ix++)
+          for (var iz = Math.floor(z0 - w); iz <= Math.ceil(z0 + w); iz++) {
+            var ddx = ix + 0.5 - x0, ddz = iz + 0.5 - z0;
+            if (ddx * ddx + ddz * ddz <= (w / 2) * (w / 2) + 0.5) setAir(ix, yFloor + h, iz);
+          }
+      }
+      return;
+    }
+    // Шагаем вдоль линии по 1 клетке — соседние диски перекрываются, щелей нет.
+    var steps = Math.ceil(len);
     for (var i = 0; i <= steps; i++) {
       var t = i / steps;
-      carveSphere(x0+(x1-x0)*t, y0+(y1-y0)*t, z0+(z1-z0)*t, r);
+      var cx = x0 + dx * t;
+      var cz = z0 + dz * t;
+      for (var h = 0; h < height; h++) {
+        var th = height > 1 ? h / (height - 1) : 0;
+        var w = floorW + (ceilW - floorW) * th;
+        var halfW = w / 2;
+        var y = yFloor + h;
+        var xi0 = Math.floor(cx - halfW), xi1 = Math.ceil(cx + halfW);
+        var zi0 = Math.floor(cz - halfW), zi1 = Math.ceil(cz + halfW);
+        for (var ix = xi0; ix <= xi1; ix++) {
+          for (var iz = zi0; iz <= zi1; iz++) {
+            var ddx = ix + 0.5 - cx, ddz = iz + 0.5 - cz;
+            if (ddx * ddx + ddz * ddz <= halfW * halfW + 0.5) setAir(ix, y, iz);
+          }
+        }
+      }
     }
   }
 
-  function placeUranium(x, y, z, depthMeters) {
-    var ang = Math.random() * Math.PI * 2;
-    var cx = x + Math.cos(ang) * 2.4, cy = y, cz = z + Math.sin(ang) * 2.4;
-    var r = 1.0 + Math.random() * (0.6 + depthMeters * 0.035);
-    var count = 0;
-    var x0 = Math.floor(cx-r), x1 = Math.ceil(cx+r);
-    var y0 = Math.floor(cy-r), y1 = Math.ceil(cy+r);
-    var z0 = Math.floor(cz-r), z1 = Math.ceil(cz+r);
-    for (var ix = x0; ix <= x1; ix++) for (var iy = y0; iy <= y1; iy++) for (var iz = z0; iz <= z1; iz++) {
-      if (ix<0||ix>=WORLD_W||iy<0||iy>=WORLD_H||iz<0||iz>=WORLD_D) continue;
-      var ddx = ix-cx, ddy = iy-cy, ddz = iz-cz;
-      if (ddx*ddx+ddy*ddy+ddz*ddz > r*r) continue;
-      if (grid[gIdx(ix,iy,iz)] === 1) { grid[gIdx(ix,iy,iz)] = 2; count++; }
+  // Рельсы вдоль произвольной прямой (для диагоналей).
+  // Шпалы и рельсы приближаем цепочкой мелких кубов — они визуально
+  // лягут вдоль линии. Идеальной геометрии не будет, но вид читается.
+  function addRailsLine(x0, z0, x1, z1, yFloor) {
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 2) return;
+    var ux = dx / len, uz = dz / len;
+    var px = -uz, pz = ux;              // перпендикуляр
+
+    // Две нитки рельсов, смещены на ±0.5 по перпендикуляру
+    for (var side = -1; side <= 1; side += 2) {
+      var ox = px * 0.5 * side, oz = pz * 0.5 * side;
+      var nRail = Math.max(3, Math.floor(len * 1.5));
+      for (var i = 0; i <= nRail; i++) {
+        var t = i / nRail;
+        var cx = x0 + dx * t + ox;
+        var cz = z0 + dz * t + oz;
+        railSegments.push({
+          cx: cx, cy: yFloor + 0.09, cz: cz,
+          sx: 0.14, sy: 0.1, sz: 0.14,
+          r: 0.38, g: 0.34, b: 0.30
+        });
+      }
     }
-    if (count > 0) sources.push({ x: cx, y: cy, z: cz, strength: 1300 + Math.random()*700 });
+    // Шпалы
+    var nSl = Math.max(2, Math.floor(len / 1.2));
+    for (var j = 0; j <= nSl; j++) {
+      var t2 = j / nSl;
+      railSegments.push({
+        cx: x0 + dx * t2, cy: yFloor + 0.04, cz: z0 + dz * t2,
+        sx: 0.55, sy: 0.08, sz: 0.55,
+        r: 0.22, g: 0.18, b: 0.13
+      });
+    }
   }
 
   function findFloorY(x, z, fromY) {
     if (x < 0 || x >= WORLD_W || z < 0 || z >= WORLD_D) return -1;
     var y0 = Math.min(WORLD_H - 2, fromY);
     for (var y = y0; y >= 2; y--) {
-      if (grid[gIdx(x,y,z)] === 0 && grid[gIdx(x,y-1,z)] !== 0) return y;
+      var above = grid[gIdx(x, y, z)];
+      var below = grid[gIdx(x, y - 1, z)];
+      if (above === 0 && (below === 1 || below === 2)) return y;
     }
     return -1;
   }
 
-  function generateMine() {
-    grid.fill(1);
-    sources.length = 0;
-    oreNodes.length = 0;
-    branchStarts.length = 0;
-    signRequests.length = 0;
-
-    var ex = Math.round(WORLD_W/2), ez = Math.round(WORLD_D/2), ey = ENTRANCE_Y;
-
-    carveSphere(ex, ey, ez, 4.5);
-
-    // Спиральный уклон
-    var HELIX_R = 9.5;
-    var path = [];
-    var ang = 0, hy = ey - 1.2;
-    while (hy > 7) {
-      path.push({ x: ex + Math.cos(ang)*HELIX_R, y: hy, z: ez + Math.sin(ang)*HELIX_R, a: ang });
-      ang += 0.085; hy -= 0.26;
-    }
-    spiralPath = path;
-    carveLine(ex, ey, ez, path[0].x, path[0].y, path[0].z, 2.45);
-
-    // Станции на каждом горизонте (~7 м)
-    var stations = [];
-    var lastY = ey;
-    for (var i = 0; i < path.length; i++) {
-      if (lastY - path[i].y >= 7) {
-        stations.push({ x: path[i].x, y: path[i].y, z: path[i].z, a: path[i].a });
-        lastY = path[i].y;
+  function addRails(x0, z0, x1, z1, yFloor) {
+    var isX = Math.abs(x1 - x0) > Math.abs(z1 - z0);
+    if (isX) {
+      var xa = Math.min(x0, x1), xb = Math.max(x0, x1);
+      if (xb - xa < 2) return;
+      var zm = z0;
+      railSegments.push({ cx: (xa + xb) / 2, cy: yFloor + 0.09, cz: zm - 0.5, sx: xb - xa, sy: 0.1, sz: 0.08, r: 0.38, g: 0.34, b: 0.30 });
+      railSegments.push({ cx: (xa + xb) / 2, cy: yFloor + 0.09, cz: zm + 0.5, sx: xb - xa, sy: 0.1, sz: 0.08, r: 0.38, g: 0.34, b: 0.30 });
+      var nt = Math.max(2, Math.floor((xb - xa) / 1.2));
+      for (var i = 0; i <= nt; i++) {
+        var x = xa + (xb - xa) * i / nt;
+        railSegments.push({ cx: x, cy: yFloor + 0.04, cz: zm, sx: 0.22, sy: 0.08, sz: 1.2, r: 0.22, g: 0.18, b: 0.13 });
+      }
+    } else {
+      var za = Math.min(z0, z1), zb = Math.max(z0, z1);
+      if (zb - za < 2) return;
+      var xm = x0;
+      railSegments.push({ cx: xm - 0.5, cy: yFloor + 0.09, cz: (za + zb) / 2, sx: 0.08, sy: 0.1, sz: zb - za, r: 0.38, g: 0.34, b: 0.30 });
+      railSegments.push({ cx: xm + 0.5, cy: yFloor + 0.09, cz: (za + zb) / 2, sx: 0.08, sy: 0.1, sz: zb - za, r: 0.38, g: 0.34, b: 0.30 });
+      var ntZ = Math.max(2, Math.floor((zb - za) / 1.2));
+      for (var j = 0; j <= ntZ; j++) {
+        var z = za + (zb - za) * j / ntZ;
+        railSegments.push({ cx: xm, cy: yFloor + 0.04, cz: z, sx: 1.2, sy: 0.08, sz: 0.22, r: 0.22, g: 0.18, b: 0.13 });
       }
     }
-
-    var usedLabels = {};
-    function uniqueLabel(arr) {
-      for (var t = 0; t < 10; t++) {
-        var l = arr[(Math.random()*arr.length)|0];
-        if (!usedLabels[l]) { usedLabels[l] = true; return l; }
-      }
-      return arr[(Math.random()*arr.length)|0];
-    }
-
-    var CC_PREFIXES = ["Квершлаг №", "Орт №", "Штрек №", "Просек №", "Сбойка №"];
-
-    for (var si = 0; si < stations.length; si++) {
-      var st = stations[si];
-      carveSphere(st.x, st.y, st.z, 3.2);
-
-      var numCC = 2 + (Math.random() < 0.6 ? 1 : 0);
-
-      for (var ci = 0; ci < numCC; ci++) {
-        var baseAng = st.a + (Math.random() - 0.5) * 2.2;
-        var dirX = Math.cos(baseAng), dirZ = Math.sin(baseAng);
-        var len = 10 + Math.random() * 15;
-        var endX = clamp(st.x + dirX*len, 5, WORLD_W-5);
-        var endZ = clamp(st.z + dirZ*len, 5, WORLD_D-5);
-        var endY = clamp(st.y + (Math.random()-0.5)*1.2, 5, WORLD_H-5);
-        var startX = st.x + dirX * 2.6;
-        var startZ = st.z + dirZ * 2.6;
-        carveLine(startX, st.y, startZ, endX, endY, endZ, 2.1);
-
-        var ccLabel = CC_PREFIXES[(Math.random()*CC_PREFIXES.length)|0] + (si+1) + "-" + (ci+1);
-
-        // Табличка у входа в квершлаг: внутри выработки, лицом назад к станции
-        signRequests.push({
-          x: startX + dirX*3.5, y: st.y - 1, z: startZ + dirZ*3.5,
-          text: ccLabel,
-          faceX: -dirX, faceZ: -dirZ
-        });
-
-        var roll = Math.random();
-
-        if (roll < 0.18 && si < stations.length - 1) {
-          // Вертикальный ствол вниз к следующей станции
-          var nextSt = stations[si+1];
-          var shaftTop = Math.round(endY) - 1;
-          var shaftBot = Math.round(nextSt.y) - 1;
-          if (shaftBot < shaftTop - 4) {
-            for (var vy = shaftTop; vy >= shaftBot; vy--) {
-              carveSphere(endX, vy, endZ, 1.35);
-            }
-            carveLine(endX, shaftBot, endZ, nextSt.x, nextSt.y, nextSt.z, 2.0);
-            signRequests.push({
-              x: endX - dirX*2.2, y: endY - 1, z: endZ - dirZ*2.2,
-              text: "Ствол " + (si+1) + " — вниз",
-              faceX: dirX, faceZ: dirZ
-            });
-          }
-        } else if (roll < 0.40) {
-          // Большой зал
-          var hallR = 3.5 + Math.random() * 2.5;
-          carveSphere(endX, endY, endZ, hallR);
-          var hallArr = ["Зал обрушения","Камера разгрузки","Дробильный комплекс","Рудосброс",
-            "Аккумулирующая камера","Зал ожидания","Камера грохочения","Бункерный комплекс",
-            "Рудный склад","Зал вентиляции","Камера перегрузки","Отстойник","Камера усреднения"];
-          var hallLabel = uniqueLabel(hallArr);
-          signRequests.push({
-            x: endX, y: endY - 1, z: endZ,
-            text: hallLabel,
-            faceX: -dirX, faceZ: -dirZ
-          });
-          if (Math.random() < 0.6) placeUranium(endX + (Math.random()-0.5)*2, endY, endZ + (Math.random()-0.5)*2, ENTRANCE_Y-endY);
-        } else if (roll < 0.62) {
-          // Прямоугольная техническая камера
-          var sideAng = baseAng + (Math.random()<0.5?1:-1)*(Math.PI/2 + (Math.random()-0.5)*0.5);
-          var sideX = clamp(endX + Math.cos(sideAng)*4, 4, WORLD_W-4);
-          var sideZ = clamp(endZ + Math.sin(sideAng)*4, 4, WORLD_D-4);
-          carveLine(endX, endY, endZ, sideX, endY, sideZ, 2.1);
-
-          var roomW = 3 + ((Math.random() * 3) | 0); // 3,4,5
-          var roomD = 3 + ((Math.random() * 3) | 0);
-          var roomH = 3 + ((Math.random() * 2) | 0); // 3,4
-          var rcx = Math.round(sideX), rcz = Math.round(sideZ);
-          var floorFeet = Math.round(endY) - 2;
-
-          carveBox(
-            rcx - (roomW>>1), floorFeet, rcz - (roomD>>1),
-            rcx + ((roomW-1)>>1), floorFeet + roomH - 1, rcz + ((roomD-1)>>1)
-          );
-
-          var techArr = ["Насосная камера","Электроподстанция","Зарядная камера","Склад ВМ",
-            "Медпункт","Диспетчерская","Вентиляционная камера","Компрессорная","Камера связи",
-            "Ремонтный участок","Камера дегазации","Трансформаторная","Камера ожидания",
-            "Инструментальная","Противопожарная камера","Склад ГСМ"];
-          var techLabel = uniqueLabel(techArr);
-          signRequests.push({
-            x: rcx, y: floorFeet + 1, z: rcz,
-            text: techLabel,
-            faceX: -Math.cos(sideAng), faceZ: -Math.sin(sideAng)
-          });
-        } else if (roll < 0.82) {
-          // Тупиковый забой с рудой
-          placeUranium(endX, endY, endZ, ENTRANCE_Y-endY);
-          if (Math.random() < 0.4) placeUranium(endX + (Math.random()-0.5)*3, endY, endZ + (Math.random()-0.5)*3, ENTRANCE_Y-endY);
-          signRequests.push({
-            x: endX - dirX*1.5, y: endY - 1, z: endZ - dirZ*1.5,
-            text: "Забой " + (si+1) + "-бис",
-            faceX: dirX, faceZ: dirZ
-          });
-        } else {
-          // Рудное тело
-          placeUranium(endX, endY, endZ, ENTRANCE_Y-endY);
-          placeUranium(endX + (Math.random()-0.5)*4, endY, endZ + (Math.random()-0.5)*4, ENTRANCE_Y-endY);
-          signRequests.push({
-            x: endX - dirX*1.5, y: endY - 1, z: endZ - dirZ*1.5,
-            text: "Рудное тело",
-            faceX: dirX, faceZ: dirZ
-          });
-        }
-
-        branchStarts.push({ x: startX + dirX*2, y: st.y, z: startZ + dirZ*2 });
-      }
-    }
-
-    // Спираль — последней, чтобы пандус был целым
-    for (var k = 0; k < path.length; k++) carveSphere(path[k].x, path[k].y, path[k].z, 2.45);
-
-    signRequests.push({
-      x: ex + 2.5, y: ey - 1, z: ez,
-      text: "Центральная шахта", faceX: 1, faceZ: 0
-    });
-    signRequests.push({
-      x: ex - 2.5, y: ey - 1, z: ez,
-      text: "Выход на поверхность", faceX: -1, faceZ: 0
-    });
-
-    placeUranium(ex + 5, ey - 1, ez + 5, 1);
-    placeUranium(ex - 5, ey - 2, ez - 5, 2);
-
-    return { x: ex, y: ey - 3, z: ez, yaw: Math.random() * Math.PI * 2 };
   }
 
-  /* ============================================================
-     Геометрия мира
-     ============================================================ */
+  // ============================================================
+  //  Построение мира из конфигурации
+  // ============================================================
+  function buildWorld(cfg) {
+    grid = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
+    grid.fill(1);
+    sources.length = 0;
+    signRequests.length = 0;
+    railSegments.length = 0;
+    cartPlacements.length = 0;
+
+    var levelY = {}, levelName = {};
+    for (var i = 0; i < cfg.levels.length; i++) {
+      levelY[cfg.levels[i].id] = cfg.levels[i].y;
+      levelName[cfg.levels[i].id] = cfg.levels[i].name;
+    }
+    ENTRANCE_Y = cfg.levels[0].y;
+
+    // --- Туннели ---
+    diagonalRails.length = 0;
+
+    for (var ti = 0; ti < cfg.tunnels.length; ti++) {
+      var t = cfg.tunnels[ti];
+      var ty = levelY[t.level];
+      var st = cfg.world.tunnelStyles[t.style || "main"];
+      var dx = Math.abs(t.to[0] - t.from[0]);
+      var dz = Math.abs(t.to[1] - t.from[1]);
+
+      if (dx < 0.5 && dz >= 0.5) {
+        // Осевой вдоль Z
+        carveTrapezoidZ(t.from[1], t.to[1], t.from[0], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        if (t.rails) addRails(t.from[0], t.from[1], t.from[0], t.to[1], ty);
+      } else if (dz < 0.5 && dx >= 0.5) {
+        // Осевой вдоль X
+        carveTrapezoidX(t.from[0], t.to[0], t.from[1], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        if (t.rails) addRails(t.from[0], t.from[1], t.to[0], t.from[1], ty);
+      } else {
+        // Диагональный: вырезаем только воксели (стены/пол останутся воксельными)
+        carveTunnelLine(t.from[0], t.from[1], t.to[0], t.to[1], ty, st.floorWidth, st.ceilWidth, TUNNEL_HEIGHT);
+        
+        // А рельсы отправляем в отдельный массив для гладкой отрисовки
+        if (t.rails) {
+          diagonalRails.push({ x0: t.from[0], z0: t.from[1], x1: t.to[0], z1: t.to[1], yFloor: ty });
+        }
+      }
+    }
+
+    // --- Перекрёстки ---
+    for (var ji = 0; ji < cfg.junctions.length; ji++) {
+      var j = cfg.junctions[ji];
+      var js = cfg.world.tunnelStyles[j.style || "main"];
+      carveJunction(j.at[0], levelY[j.level], j.at[1], js.floorWidth, TUNNEL_HEIGHT);
+    }
+
+    // --- Камеры ---
+    for (var ri = 0; ri < cfg.rooms.length; ri++) {
+      var r = cfg.rooms[ri];
+      var ry = levelY[r.level];
+      carveRoom(Math.round(r.center[0]), Math.round(r.center[1]), ry, r.size[0], r.size[1], r.height || 4);
+      if (r.name) {
+        signRequests.push({
+          x: r.center[0], y: ry + 2, z: r.center[1],
+          text: r.name, faceX: 1, faceZ: 0
+        });
+      }
+    }
+
+    // --- Шахты ---
+    for (var si = 0; si < cfg.shafts.length; si++) {
+      var s = cfg.shafts[si];
+      var yTop = levelY[s.fromLevel];
+      var yBot = levelY[s.toLevel];
+      carveShaft(Math.round(s.at[0]), Math.round(s.at[1]), yTop, yBot, cfg.world.shaftSize, !!s.withLadder);
+      if (s.label) {
+        signRequests.push({
+          x: s.at[0], y: yTop + 2, z: s.at[1],
+          text: s.label, faceX: 1, faceZ: 0
+        });
+      }
+    }
+
+    // --- Руда (урановые вкрапления) ---
+    for (var oi = 0; oi < cfg.oreSources.length; oi++) {
+      var o = cfg.oreSources[oi];
+      var lv = levelY[o.level];
+      if (lv === undefined) continue;
+
+      // Радиус не меньше 2.5 — иначе сфера не достаёт до камня сквозь
+      // 3 воздушных вокселя туннеля.
+      var r = Math.max(o.radius || 1.2, 2.5);
+
+      // Три сферы: пол (lv), середина, потолок (lv + TUNNEL_HEIGHT).
+      // Пол и потолок гарантированно попадают в камень — их верхние/нижние
+      // грани видны изнутри и рендерятся uranMesh.
+      carveOreSphere(o.at[0], lv,                  o.at[1], r);
+      carveOreSphere(o.at[0], lv + Math.floor(TUNNEL_HEIGHT / 2), o.at[1], r);
+      carveOreSphere(o.at[0], lv + TUNNEL_HEIGHT,  o.at[1], r);
+
+      // Источник регистрируем ВСЕГДА, даже если вокселей 0 — иначе
+      // не будет пикапов и радиации рядом с месторождением.
+      sources.push({
+        x: o.at[0] + 0.5,
+        y: lv + Math.floor(TUNNEL_HEIGHT / 2) + 0.5,
+        z: o.at[1] + 0.5,
+        strength: o.strength || 1600
+      });
+    }
+
+    // --- Явные таблички ---
+    if (cfg.signs) {
+      for (var sgi = 0; sgi < cfg.signs.length; sgi++) {
+        var sg = cfg.signs[sgi];
+        signRequests.push({
+          x: sg.at[0], y: levelY[sg.level] + (sg.height || 2), z: sg.at[1],
+          text: sg.text,
+          faceX: sg.face ? sg.face[0] : 1,
+          faceZ: sg.face ? sg.face[1] : 0
+        });
+      }
+    }
+
+    // --- Вагонетки ---
+    for (var ci = 0; ci < cfg.carts.length; ci++) {
+      var c = cfg.carts[ci];
+      cartPlacements.push({
+        x: c.at[0], y: levelY[c.level], z: c.at[1],
+        yaw: c.yaw || 0, ore: !!c.ore
+      });
+    }
+
+    // --- Старт ---
+    var st0 = cfg.start || {
+        level: cfg.levels[0].id,
+        at: [Math.floor(WORLD_W / 2), Math.floor(WORLD_D / 2)],
+        yaw: 0
+    };
+    startPos = {
+      x: st0.at[0], y: levelY[st0.level], z: st0.at[1],
+      yaw: st0.yaw || 0
+    };
+  }
+
+  // ============================================================
+  //  Геометрия мира (воксели + кристаллы)
+  // ============================================================
   var FACES = [
     { n: [ 1, 0, 0], c: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
     { n: [-1, 0, 0], c: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
@@ -560,12 +902,8 @@
   ];
   var FACE_UV = [[0,0],[0,1],[1,1],[1,0]];
 
-  var CRY_VERTS = [
-    [0,1,0],[0,-0.6,0],[0.45,0.12,0],[0,0.12,0.45],[-0.45,0.12,0],[0,0.12,-0.45]
-  ];
-  var CRY_FACES = [
-    [0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]
-  ];
+  var CRY_VERTS = [[0,1,0],[0,-0.6,0],[0.45,0.12,0],[0,0.12,0.45],[-0.45,0.12,0],[0,0.12,-0.45]];
+  var CRY_FACES = [[0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]];
 
   function pushCrystal(cx, cy, cz, nx, ny, nz, r, h, twist, posArr, norArr, colArr, idxArr, shade) {
     var ux = nx, uy = ny, uz = nz;
@@ -600,15 +938,13 @@
     }
   }
 
-  var stoneMesh = null, uranMesh = null, crystalMesh = null;
-
   function buildGeometry() {
     var sp=[], sn=[], su=[], si=[], sc=[];
     var up=[], un=[], uu=[], ui=[], uc=[];
     var cp=[], cn=[], cc=[], ci=[];
     var crystalSeeds = [];
 
-    function pushFace(px, py, pz, face, posArr, norArr, uvArr, idxArr, colArr, shade) {
+    function pushFace(px, py, pz, face, posArr, norArr, uvArr, idxArr, colArr, shade, tr, tg, tb) {
       var base = posArr.length/3;
       for (var k = 0; k < 4; k++) {
         var c = face.c[k];
@@ -620,22 +956,26 @@
         );
         norArr.push(face.n[0], face.n[1], face.n[2]);
         uvArr.push(FACE_UV[k][0], FACE_UV[k][1]);
-        colArr.push(shade*1.02, shade, shade*0.93);
+        colArr.push(shade*1.02*tr, shade*tg, shade*0.93*tb);
       }
       idxArr.push(base,base+1,base+2,base,base+2,base+3);
     }
 
     for (var z = 0; z < WORLD_D; z++) for (var y = 0; y < WORLD_H; y++) for (var x = 0; x < WORLD_W; x++) {
       var v = grid[gIdx(x,y,z)];
-      if (v === 0) continue;
-      var shade = 0.62 + hash3(x,y,z,7)*0.55;
+      if (v === 0 || v === 3) continue;
+      var shade = 0.68 + hash3(x,y,z,7)*0.4;
       for (var f = 0; f < 6; f++) {
         var face = FACES[f];
         var nx = x+face.n[0], ny = y+face.n[1], nz = z+face.n[2];
         if (solidAt(nx,ny,nz)) continue;
-        if (v === 1) pushFace(x,y,z,face,sp,sn,su,si,sc,shade);
-        else {
-          pushFace(x,y,z,face,up,un,uu,ui,uc,0.5+hash3(x,y,z,7)*0.45);
+        var tr = 1, tg = 1, tb = 1;
+        if (face.n[1] === 1) { tr = 0.66; tg = 0.62; tb = 0.56; }
+        else if (face.n[1] === -1) { tr = 0.86; tg = 0.86; tb = 0.86; }
+        if (v === 1) {
+          pushFace(x,y,z,face,sp,sn,su,si,sc,shade,tr,tg,tb);
+        } else {
+          pushFace(x,y,z,face,up,un,uu,ui,uc, 0.5 + hash3(x,y,z,7)*0.45, tr, tg, tb);
           if (hash3(x,y,z,41+f) < 0.8) {
             crystalSeeds.push({ x:x, y:y, z:z, nx:face.n[0], ny:face.n[1], nz:face.n[2], s:hash3(x,y,z,53+f) });
           }
@@ -682,14 +1022,190 @@
     crystalMesh = new THREE.Mesh(makeGeo(cp,cn,null,cc,ci), crystalMat); crystalMesh.frustumCulled = false; scene.add(crystalMesh);
   }
 
-  /* ============================================================
-     Таблички (только на стенах)
-     ============================================================ */
-    var signGroup = null;
+  // Рисует повёрнутый 3D-брусок (используется для рельсов и шпал)
+  function pushBoxOriented(cx, cy, cz, sx, sy, sz, ux, uz, px, pz, posArr, norArr, colArr, idxArr, r, g, b) {
+    var hx = sx/2, hy = sy/2, hz = sz/2;
+    var verts = [
+      [-hx, -hy, -hz], [ hx, -hy, -hz], [ hx,  hy, -hz], [-hx,  hy, -hz],
+      [-hx, -hy,  hz], [ hx, -hy,  hz], [ hx,  hy,  hz], [-hx,  hy,  hz]
+    ];
+    var wv = [];
+    for (var i = 0; i < 8; i++) {
+      var lx = verts[i][0], ly = verts[i][1], lz = verts[i][2];
+      wv.push([cx + lx*ux + lz*px, cy + ly, cz + lx*uz + lz*pz]);
+    }
+    var faces = [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+    for (var f = 0; f < 6; f++) {
+      var fv = faces[f];
+      var base = posArr.length / 3;
+      var A = wv[fv[0]], B = wv[fv[1]], C = wv[fv[2]];
+      var e1 = [B[0]-A[0], B[1]-A[1], B[2]-A[2]];
+      var e2 = [C[0]-A[0], C[1]-A[1], C[2]-A[2]];
+      var nx = e1[1]*e2[2] - e1[2]*e2[1];
+      var ny = e1[2]*e2[0] - e1[0]*e2[2];
+      var nz = e1[0]*e2[1] - e1[1]*e2[0];
+      var nl = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+      nx/=nl; ny/=nl; nz/=nl;
+      for (var k = 0; k < 4; k++) {
+        var v = wv[fv[k]];
+        posArr.push(v[0], v[1], v[2]);
+        norArr.push(nx, ny, nz);
+        colArr.push(r, g, b);
+      }
+      idxArr.push(base, base+1, base+2, base, base+2, base+3);
+    }
+  }
+
+  // Собирает геометрию для диагональных рельсов
+  function pushDiagonalRails(rail, posArr, norArr, colArr, idxArr) {
+    var x0 = rail.x0, z0 = rail.z0, x1 = rail.x1, z1 = rail.z1;
+    var y = rail.yFloor + 0.05;
+    var dx = x1 - x0, dz = z1 - z0;
+    var len = Math.sqrt(dx*dx + dz*dz);
+    if (len < 0.1) return;
+    var ux = dx/len, uz = dz/len;
+    var px = -uz, pz = ux; // перпендикуляр
+
+    // 2 нитки рельсов (смещены на ±0.5)
+    var offsets = [-0.5, 0.5];
+    for (var oi = 0; oi < 2; oi++) {
+      var off = offsets[oi];
+      var cx = (x0 + x1)/2 + px * off;
+      var cz = (z0 + z1)/2 + pz * off;
+      pushBoxOriented(cx, y + 0.05, cz, len, 0.1, 0.1, ux, uz, px, pz, posArr, norArr, colArr, idxArr, 0.38, 0.34, 0.30);
+    }
+
+    // Шпалы (поперёк рельсов)
+    var nSl = Math.max(2, Math.floor(len / 1.2));
+    for (var j = 0; j <= nSl; j++) {
+      var t = j / nSl;
+      var cx2 = x0 + dx * t;
+      var cz2 = z0 + dz * t;
+      // Шпала: длина вдоль перпендикуляра = 1.2, толщина = 0.2
+      pushBoxOriented(cx2, y, cz2, 0.2, 0.08, 1.2, ux, uz, px, pz, posArr, norArr, colArr, idxArr, 0.22, 0.18, 0.13);
+    }
+  }
+
+  function buildRailGeometry() {
+    var pos = [], nor = [], col = [], idx = [];
+    function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
+      for (var f = 0; f < 6; f++) {
+        var face = FACES[f];
+        var base = pos.length / 3;
+        for (var k = 0; k < 4; k++) {
+          var c = face.c[k];
+          pos.push(cx + (c[0]-0.5)*sx, cy + (c[1]-0.5)*sy, cz + (c[2]-0.5)*sz);
+          nor.push(face.n[0], face.n[1], face.n[2]);
+          col.push(r, g, b);
+        }
+        idx.push(base, base+1, base+2, base, base+2, base+3);
+      }
+    }
+    for (var i = 0; i < railSegments.length; i++) {
+      var s = railSegments[i];
+      addBox(s.cx, s.cy, s.cz, s.sx, s.sy, s.sz, s.r, s.g, s.b);
+    }
+
+    // Диагональные рельсы
+    for (var ri = 0; ri < diagonalRails.length; ri++) {
+      pushDiagonalRails(diagonalRails[ri], pos, nor, col, idx);
+    }
+    
+    if (railMesh) { scene.remove(railMesh); railMesh.geometry.dispose(); railMesh = null; }
+    if (pos.length === 0) return;
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(new THREE.Uint32BufferAttribute(idx, 1));
+    railMesh = new THREE.Mesh(geo, railMat);
+    railMesh.frustumCulled = false;
+    scene.add(railMesh);
+  }
+
+  function buildLadderGeometry() {
+    var pos = [], nor = [], col = [], idx = [];
+    function addBox(cx, cy, cz, sx, sy, sz, r, g, b) {
+      for (var f = 0; f < 6; f++) {
+        var face = FACES[f];
+        var base = pos.length / 3;
+        for (var k = 0; k < 4; k++) {
+          var c = face.c[k];
+          pos.push(cx + (c[0]-0.5)*sx, cy + (c[1]-0.5)*sy, cz + (c[2]-0.5)*sz);
+          nor.push(face.n[0], face.n[1], face.n[2]);
+          col.push(r, g, b);
+        }
+        idx.push(base, base+1, base+2, base, base+2, base+3);
+      }
+    }
+    for (var y = 0; y < WORLD_H; y++) {
+      for (var z = 0; z < WORLD_D; z++) {
+        for (var x = 0; x < WORLD_W; x++) {
+          if (grid[gIdx(x, y, z)] !== 3) continue;
+          var drawn = false;
+          var railR = 0.55, railG = 0.40, railB = 0.22;
+          var rungR = 0.72, rungG = 0.58, rungB = 0.32;
+          if (solidAt(x - 1, y, z)) {
+            var wx = x + 0.06;
+            addBox(wx, y + 0.5, z + 0.22, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(wx, y + 0.5, z + 0.78, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(wx + 0.01, y + 0.28, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            addBox(wx + 0.01, y + 0.72, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (solidAt(x + 1, y, z)) {
+            var ex = x + 0.94;
+            addBox(ex, y + 0.5, z + 0.22, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(ex, y + 0.5, z + 0.78, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(ex - 0.01, y + 0.28, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            addBox(ex - 0.01, y + 0.72, z + 0.5, 0.05, 0.05, 0.62, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn && solidAt(x, y, z - 1)) {
+            var sz = z + 0.06;
+            addBox(x + 0.22, y + 0.5, sz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.78, y + 0.5, sz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, sz + 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, sz + 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn && solidAt(x, y, z + 1)) {
+            var nz = z + 0.94;
+            addBox(x + 0.22, y + 0.5, nz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.78, y + 0.5, nz, 0.06, 1.0, 0.06, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, nz - 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, nz - 0.01, 0.62, 0.05, 0.05, rungR, rungG, rungB);
+            drawn = true;
+          }
+          if (!drawn) {
+            addBox(x + 0.30, y + 0.5, z + 0.5, 0.05, 1.0, 0.05, railR, railG, railB);
+            addBox(x + 0.70, y + 0.5, z + 0.5, 0.05, 1.0, 0.05, railR, railG, railB);
+            addBox(x + 0.5, y + 0.28, z + 0.5, 0.42, 0.05, 0.05, rungR, rungG, rungB);
+            addBox(x + 0.5, y + 0.72, z + 0.5, 0.42, 0.05, 0.05, rungR, rungG, rungB);
+          }
+        }
+      }
+    }
+    if (ladderMesh) { scene.remove(ladderMesh); ladderMesh.geometry.dispose(); ladderMesh = null; }
+    if (pos.length === 0) return;
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(new THREE.Uint32BufferAttribute(idx, 1));
+    ladderMesh = new THREE.Mesh(geo, ladderMat);
+    ladderMesh.frustumCulled = false;
+    scene.add(ladderMesh);
+  }
+
+  // ============================================================
+  //  Таблички
+  // ============================================================
+  var signGroup = null;
   var signTextures = {};
   var SIGN_W = 1.5, SIGN_H = 0.4;
   var SIGN_GEO = new THREE.PlaneGeometry(SIGN_W, SIGN_H);
-  var SIGN_OFFSET = 0.78;   // смещение от центра блока-стены
+  var SIGN_OFFSET = 0.78;
 
   function makeSignTexture(text) {
     if (signTextures[text]) return signTextures[text];
@@ -697,10 +1213,9 @@
     var cv = document.createElement("canvas");
     cv.width = w; cv.height = h;
     var ctx = cv.getContext("2d");
-    ctx.fillStyle = "#24271f"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#2a2c25"; ctx.fillRect(0, 0, w, h);
     for (var i = 0; i < 44; i++) {
-      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," +
-        (0.03+Math.random()*0.09).toFixed(3) + ")";
+      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," + (0.03+Math.random()*0.09).toFixed(3) + ")";
       ctx.beginPath();
       ctx.arc(Math.random()*w, Math.random()*h, 5+Math.random()*34, 0, Math.PI*2);
       ctx.fill();
@@ -708,7 +1223,7 @@
     ctx.strokeStyle = "#c9c49b"; ctx.lineWidth = 6;
     ctx.strokeRect(7, 7, w-14, h-14);
     ctx.fillStyle = "#ece8ce"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    var fs = 74;
+    var fs = 68;
     ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
     while (ctx.measureText(text).width > w - 64 && fs > 20) {
       fs -= 4; ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
@@ -719,12 +1234,6 @@
     return tex;
   }
 
-  /* Ставим табличку на стену. Сначала пробуем "строгий" режим —
-     стена должна тянуться в перпендикуляре хотя бы на 1 блок, чтобы
-     табличка лежала на плоскости, а не торчала в проём. Если не
-     получилось — "мягкий" режим (как раньше). В обоих режимах
-     проверяется, что перед всей шириной таблички нет блоков, и
-     табличка вынесена за пределы джиттера стены. */
   function tryWallSign(x, y, z, text, prefFaceX, prefFaceZ) {
     if (tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, true)) return true;
     return tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, false);
@@ -732,85 +1241,54 @@
 
   function tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, strict) {
     var xi = Math.round(x), zi = Math.round(z);
-
     var dirs = [];
     if (prefFaceX !== undefined && prefFaceZ !== undefined) {
       var fx, fz;
-      if (Math.abs(prefFaceX) >= Math.abs(prefFaceZ)) {
-        fx = Math.sign(prefFaceX) || 1; fz = 0;
-      } else {
-        fx = 0; fz = Math.sign(prefFaceZ) || 1;
-      }
+      if (Math.abs(prefFaceX) >= Math.abs(prefFaceZ)) { fx = Math.sign(prefFaceX) || 1; fz = 0; }
+      else { fx = 0; fz = Math.sign(prefFaceZ) || 1; }
       dirs.push([-fx, -fz]);
     }
-    var cardinals = [[1,0],[-1,0],[0,1],[0,-1]];
-    for (var c = 0; c < cardinals.length; c++) {
+    var card = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (var c = 0; c < card.length; c++) {
       var dup = false;
       for (var dd = 0; dd < dirs.length; dd++) {
-        if (dirs[dd][0] === cardinals[c][0] && dirs[dd][1] === cardinals[c][1]) { dup = true; break; }
+        if (dirs[dd][0] === card[c][0] && dirs[dd][1] === card[c][1]) { dup = true; break; }
       }
-      if (!dup) dirs.push(cardinals[c]);
+      if (!dup) dirs.push(card[c]);
     }
-
-    var yTries = [Math.round(y), Math.round(y) + 1, Math.round(y) - 1, Math.round(y) + 2];
+    var yTries = [Math.round(y), Math.round(y)+1, Math.round(y)-1, Math.round(y)+2];
     var halfW = Math.ceil(SIGN_W / 2);
-
     for (var yi = 0; yi < yTries.length; yi++) {
       var yTry = yTries[yi];
       if (yTry < 2 || yTry >= WORLD_H - 2) continue;
-
       for (var d = 0; d < dirs.length; d++) {
         var dx = dirs[d][0], dz = dirs[d][1];
         var perpX = dz, perpZ = -dx;
-
         for (var dist = 1; dist <= 4; dist++) {
-          var wx = xi + dx * dist;
-          var wz = zi + dz * dist;
+          var wx = xi + dx * dist, wz = zi + dz * dist;
           if (wx < 1 || wx >= WORLD_W - 1 || wz < 1 || wz >= WORLD_D - 1) break;
-
-          // Базовая стена
           if (!solidAt(wx, yTry, wz)) continue;
           if (!solidAt(wx, yTry + 1, wz)) continue;
           if (solidAt(wx - dx, yTry, wz - dz)) continue;
           if (solidAt(wx - dx, yTry + 1, wz - dz)) continue;
-
-          // Свободно ли впереди по ВСЕЙ ширине таблички (а не только в центре)
-          var frontBlocked = false;
+          var blocked = false;
           for (var w = -halfW; w <= halfW; w++) {
-            var fX = wx + perpX * w - dx;
-            var fZ = wz + perpZ * w - dz;
-            if (solidAt(fX, yTry, fZ) || solidAt(fX, yTry + 1, fZ)) {
-              frontBlocked = true;
-              break;
-            }
+            var fX = wx + perpX * w - dx, fZ = wz + perpZ * w - dz;
+            if (solidAt(fX, yTry, fZ) || solidAt(fX, yTry + 1, fZ)) { blocked = true; break; }
           }
-          if (frontBlocked) continue;
-
+          if (blocked) continue;
           if (strict) {
-            // Требуем, чтобы стена тянулась вдоль ширины таблички
-            var sideSupport = false;
+            var sup = false;
             for (var w2 = -halfW; w2 <= halfW; w2++) {
               if (w2 === 0) continue;
               if (solidAt(wx + perpX * w2, yTry, wz + perpZ * w2) &&
-                  solidAt(wx + perpX * w2, yTry + 1, wz + perpZ * w2)) {
-                sideSupport = true;
-                break;
-              }
+                  solidAt(wx + perpX * w2, yTry + 1, wz + perpZ * w2)) { sup = true; break; }
             }
-            if (!sideSupport) continue;
+            if (!sup) continue;
           }
-
-          var mat = new THREE.MeshBasicMaterial({
-            map: makeSignTexture(text),
-            color: 0xbbbbbb,
-            side: THREE.DoubleSide
-          });
+          var mat = new THREE.MeshBasicMaterial({ map: makeSignTexture(text), color: 0xbbbbbb, side: THREE.DoubleSide });
           var mesh = new THREE.Mesh(SIGN_GEO, mat);
-          mesh.position.set(
-            wx + 0.5 - dx * SIGN_OFFSET,
-            yTry + 0.5,
-            wz + 0.5 - dz * SIGN_OFFSET
-          );
+          mesh.position.set(wx + 0.5 - dx * SIGN_OFFSET, yTry + 0.5, wz + 0.5 - dz * SIGN_OFFSET);
           mesh.rotation.y = Math.atan2(-dx, -dz);
           signGroup.add(mesh);
           return true;
@@ -820,9 +1298,6 @@
     return false;
   }
 
-  /* ============================================================
-     Вагонетки
-     ============================================================ */
   var cartGroup = null;
 
   function makeCart(ore, mats) {
@@ -856,9 +1331,6 @@
     return g;
   }
 
-  /* ============================================================
-     Рудные кристаллы-подбиралки
-     ============================================================ */
   var oreGroup = null;
   var oreItems = [];
   var oreCollected = 0;
@@ -870,17 +1342,9 @@
     for (var i = 0; i < count; i++) {
       var size = 0.08 + Math.random() * 0.06;
       var geo = new THREE.OctahedronGeometry(size, 0);
-      var mat = new THREE.MeshLambertMaterial({
-        color: 0x0d2a12,
-        emissive: 0x4cff66,
-        emissiveIntensity: 1.4
-      });
+      var mat = new THREE.MeshLambertMaterial({ color: 0x0d2a12, emissive: 0x4cff66, emissiveIntensity: 1.4 });
       var m = new THREE.Mesh(geo, mat);
-      m.position.set(
-        (Math.random()-0.5) * 0.28,
-        0.1 + Math.random() * 0.22,
-        (Math.random()-0.5) * 0.28
-      );
+      m.position.set((Math.random()-0.5) * 0.28, 0.1 + Math.random() * 0.22, (Math.random()-0.5) * 0.28);
       m.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
       g.add(m);
     }
@@ -895,13 +1359,12 @@
     oreGroup = new THREE.Group();
     oreItems.length = 0;
     oreCollected = 0;
-
     for (var i = 0; i < sources.length; i++) {
-      if (oreItems.length >= 90) break;
+      if (oreItems.length >= ORE_MAX_ITEMS) break;
       var s = sources[i];
       var count = 1 + ((Math.random() * 3) | 0);
       for (var c = 0; c < count; c++) {
-        if (oreItems.length >= 90) break;
+        if (oreItems.length >= ORE_MAX_ITEMS) break;
         var ang = Math.random() * Math.PI * 2;
         var dist = 1.6 + Math.random() * 2.4;
         var px = s.x + Math.cos(ang) * dist;
@@ -911,22 +1374,16 @@
         var fy = findFloorY(xi, zi, Math.round(s.y) + 4);
         if (fy < 2) continue;
         if (solidAt(xi, fy, zi) || solidAt(xi, fy + 1, zi)) continue;
-
         var mesh = createOrePickupMesh();
         mesh.position.set(xi + 0.5, fy + 0.05, zi + 0.5);
         oreGroup.add(mesh);
         oreItems.push({
-          x: xi + 0.5,
-          y: fy + 0.05,
-          z: zi + 0.5,
-          baseY: fy + 0.05,
-          mesh: mesh,
-          collected: false,
-          phase: Math.random() * Math.PI * 2
+          x: xi + 0.5, y: fy + 0.05, z: zi + 0.5,
+          baseY: fy + 0.05, mesh: mesh,
+          collected: false, phase: Math.random() * Math.PI * 2
         });
       }
     }
-
     scene.add(oreGroup);
     updateOreHUD();
   }
@@ -935,7 +1392,6 @@
     var el = document.getElementById("oreValue");
     if (el) el.textContent = "Руда: " + oreCollected + " / " + oreItems.length;
   }
-
   function showPickupHint() {
     var el = document.getElementById("pickupHint");
     if (!el) return;
@@ -943,9 +1399,6 @@
     pickupHintTimer = 0.9;
   }
 
-  /* ============================================================
-     Сборка декора
-     ============================================================ */
   function buildDecor() {
     if (signGroup) scene.remove(signGroup);
     signGroup = new THREE.Group();
@@ -958,85 +1411,54 @@
     if (cartGroup) scene.remove(cartGroup);
     cartGroup = new THREE.Group();
     var mats = {
-      body: new THREE.MeshLambertMaterial({ color: 0x40463c }),
+      body: new THREE.MeshLambertMaterial({ color: 0x46493f }),
       dark: new THREE.MeshLambertMaterial({ color: 0x2a2c26 }),
       wheel: new THREE.MeshLambertMaterial({ color: 0x1e1f1c }),
       ore: new THREE.MeshLambertMaterial({ color: 0x2e5a34, emissive: 0x0f3f14, emissiveIntensity: 0.9 }),
       rock: new THREE.MeshLambertMaterial({ color: 0x6b6459 })
     };
-
-    var cartSpots = [];
-    for (var b = 0; b < branchStarts.length; b++) {
-      if (Math.random() < 0.35) {
-        var br = branchStarts[b];
-        var fy = findFloorY(Math.round(br.x), Math.round(br.z), Math.round(br.y) + 3);
-        if (fy >= 2 && !solidAt(Math.round(br.x), fy, Math.round(br.z))) {
-          cartSpots.push({ x: br.x, y: fy, z: br.z, ore: Math.random() < 0.55, yaw: Math.random() * Math.PI * 2 });
-        }
-      }
-      if (cartSpots.length >= 10) break;
-    }
-    for (var c = 15; c < spiralPath.length && cartSpots.length < 14; c += 22) {
-      if (Math.random() > 0.5) continue;
-      var pp = spiralPath[c];
-      var xi = Math.round(pp.x), zi = Math.round(pp.z);
-      if (xi < 2 || xi > WORLD_W-3 || zi < 2 || zi > WORLD_D-3) continue;
-      var fy2 = findFloorY(xi, zi, Math.round(pp.y) + 3);
-      if (fy2 < 2) continue;
-      cartSpots.push({ x: xi, y: fy2, z: zi, ore: Math.random() < 0.5, yaw: Math.random() * Math.PI * 2 });
-    }
-
-    for (var q = 0; q < cartSpots.length; q++) {
-      var cs = cartSpots[q];
-      var cart = makeCart(cs.ore, mats);
-      cart.position.set(cs.x + 0.5, cs.y, cs.z + 0.5);
-      cart.rotation.y = cs.yaw;
+    for (var c = 0; c < cartPlacements.length; c++) {
+      var cp = cartPlacements[c];
+      var cart = makeCart(cp.ore, mats);
+      cart.position.set(cp.x, cp.y, cp.z);
+      cart.rotation.y = cp.yaw;
       cartGroup.add(cart);
     }
     scene.add(cartGroup);
   }
 
-  /* ============================================================
-   Кликабельная панель "Выход на поверхность" на потолке
-   ============================================================ */
-  var SURFACE_URL = "../index.html"; // ← сюда подставьте ваш HTML-файл
+  var SURFACE_URL = "../index.html";
+  var ceilingExit = null;
 
+  // Выход на поверхность
   function buildCeilingExit() {
-    var geom = new THREE.PlaneGeometry(5, 5);
-    var mat = new THREE.MeshBasicMaterial({
-      color: 0xdfffdf,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide
-    });
-    var mesh = new THREE.Mesh(geom, mat);
-    // Лежит горизонтально, нормаль направлена вниз — к игроку
-    mesh.rotation.x = Math.PI / 2;
-    mesh.position.set(startPos.x + 0.5, WORLD_H - 1.1, startPos.z + 0.5);
-    mesh.name = "ceilingExit";
-    scene.add(mesh);
+    if (ceilingExit) { scene.remove(ceilingExit); }
+      // Выход на поверхность = над точкой Старта на верхнем уровне.
+      // Если startPos почему-то нет — фолбэк в центр мира.
+      var sx = (startPos && isFinite(startPos.x)) ? startPos.x : Math.floor(WORLD_W / 2);
+      var sz = (startPos && isFinite(startPos.z)) ? startPos.z : Math.floor(WORLD_D / 2);
+      var ex = sx + 0.5;
+      var ez = sz + 0.5;
+      var ey = ENTRANCE_Y + TUNNEL_HEIGHT - 0.1;
 
-    // Мягкое свечение, чтобы панель было видно
-    var glow = new THREE.PointLight(0xd8ffd8, 1.4, 10);
-    glow.position.set(mesh.position.x, mesh.position.y - 0.5, mesh.position.z);
-    scene.add(glow);
+      var geom = new THREE.PlaneGeometry(5, 5);
+      var mat = new THREE.MeshBasicMaterial({
+          color: 0xdfffdf, transparent: true, opacity: 0.85, side: THREE.DoubleSide
+      });
+      ceilingExit = new THREE.Mesh(geom, mat);
+      ceilingExit.rotation.x = Math.PI / 2;
+      ceilingExit.position.set(ex, ey, ez);
+      ceilingExit.name = "ceilingExit";
+      scene.add(ceilingExit);
 
-    return mesh;
+      var glow = new THREE.PointLight(0xd8ffd8, 1.4, 12);
+      glow.position.set(ex, ey - 0.5, ez);
+      scene.add(glow);
   }
 
-  /* ============================================================
-     Состояние игрока
-     ============================================================ */
-  var startPos = null;
-  var PLAYER = {
-    pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-    yaw: 0, pitch: 0, onGround: false, dose: 0, maxDepth: 0
-  };
-
-  var keys = {};
-  var gameState = "menu";
-  var gameTime = 0;
-
+  // ============================================================
+  //  Ввод
+  // ============================================================
   window.addEventListener("keydown", function (e) { keys[e.code] = true; if (e.code === "Space") e.preventDefault(); });
   window.addEventListener("keyup", function (e) { keys[e.code] = false; });
 
@@ -1058,105 +1480,51 @@
     if (gameState === "playing" && document.pointerLockElement !== canvas) canvas.requestPointerLock();
   });
 
-  /* ============================================================
-     Audio
-     ============================================================ */
-  var audioCtx = null, clickBuf = null, clickTimer = 0, clickInterval = 1.2;
-  var humNodes = null;
+  // ============================================================
+  //  Звук
+  // ============================================================
+  var audioCtx = null, clickBuf = null, clickTimer = 0, clickInterval = 1.2, humNodes = null;
 
-  /* Тихий таинственный эмбиент-гул шахты.
-   Собирается из нескольких процедурных слоёв:
-   - низкий дрон с расстроенными синусами (медленное "битьё")
-   - суб-бас для ощущения глубины
-   - треугольник с lowpass + медленной LFO (эффект "дыхания")
-   - фильтрованный шум (шорох вентиляции / каверн) */
   function startHum() {
     if (!audioCtx || humNodes) return;
     var now = audioCtx.currentTime;
-
     var master = audioCtx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.06, now + 4);   // плавное вступление
+    master.gain.exponentialRampToValueAtTime(0.055, now + 4);
     master.connect(audioCtx.destination);
-
-    // ——— Низкий дрон (два синуса с расстройкой → медленное битьё)
-    var g1 = audioCtx.createGain();
-    g1.gain.value = 0.55;
-    g1.connect(master);
-
-    var osc1 = audioCtx.createOscillator();
-    osc1.type = "sine";
-    osc1.frequency.value = 52;
-    var osc2 = audioCtx.createOscillator();
-    osc2.type = "sine";
-    osc2.frequency.value = 52.7;   // битьё ~0.7 Гц
+    var g1 = audioCtx.createGain(); g1.gain.value = 0.55; g1.connect(master);
+    var osc1 = audioCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 52;
+    var osc2 = audioCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 52.7;
     if (audioCtx.createStereoPanner) {
-      var panL = audioCtx.createStereoPanner(); panL.pan.value = -0.35;
-      var panR = audioCtx.createStereoPanner(); panR.pan.value =  0.35;
-      osc1.connect(panL); panL.connect(g1);
-      osc2.connect(panR); panR.connect(g1);
-    } else {
-      osc1.connect(g1); osc2.connect(g1);
-    }
-
-    // ——— Суб-бас для «глубины»
-    var osc4 = audioCtx.createOscillator();
-    osc4.type = "sine";
-    osc4.frequency.value = 33;
-    var g4 = audioCtx.createGain();
-    g4.gain.value = 0.2;
+      var pL = audioCtx.createStereoPanner(); pL.pan.value = -0.35;
+      var pR = audioCtx.createStereoPanner(); pR.pan.value = 0.35;
+      osc1.connect(pL); pL.connect(g1);
+      osc2.connect(pR); pR.connect(g1);
+    } else { osc1.connect(g1); osc2.connect(g1); }
+    var osc4 = audioCtx.createOscillator(); osc4.type = "sine"; osc4.frequency.value = 33;
+    var g4 = audioCtx.createGain(); g4.gain.value = 0.2;
     osc4.connect(g4); g4.connect(master);
-
-    // ——— Средний гармоник с медленной LFO на фильтре ("дыхание")
     var lp = audioCtx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 240;
-    lp.Q.value = 1.4;
-    lp.connect(master);
-
-    var osc3 = audioCtx.createOscillator();
-    osc3.type = "triangle";
-    osc3.frequency.value = 104;
-    var g3 = audioCtx.createGain();
-    g3.gain.value = 0.22;
+    lp.type = "lowpass"; lp.frequency.value = 240; lp.Q.value = 1.4; lp.connect(master);
+    var osc3 = audioCtx.createOscillator(); osc3.type = "triangle"; osc3.frequency.value = 104;
+    var g3 = audioCtx.createGain(); g3.gain.value = 0.22;
     osc3.connect(g3); g3.connect(lp);
-
-    var lfo = audioCtx.createOscillator();
-    lfo.type = "sine";
-    lfo.frequency.value = 0.06;             // период ~16 секунд
-    var lfoGain = audioCtx.createGain();
-    lfoGain.gain.value = 90;                // размах 240 ± 90 Гц
-    lfo.connect(lfoGain);
-    lfoGain.connect(lp.frequency);
-
-    // ——— Приглушённый шум — «воздух» шахты
+    var lfo = audioCtx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.06;
+    var lg = audioCtx.createGain(); lg.gain.value = 90;
+    lfo.connect(lg); lg.connect(lp.frequency);
     var noiseLen = Math.floor(audioCtx.sampleRate * 4);
     var noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate);
     var nd = noiseBuf.getChannelData(0);
-    // коричневый шум: интеграл белого, звучит "глубже" и мягче
     var acc = 0;
     for (var i = 0; i < nd.length; i++) {
       acc = (acc + (Math.random() * 2 - 1) * 0.02) * 0.998;
       nd[i] = acc * 6;
     }
-    var noise = audioCtx.createBufferSource();
-    noise.buffer = noiseBuf;
-    noise.loop = true;
-    var nf = audioCtx.createBiquadFilter();
-    nf.type = "lowpass";
-    nf.frequency.value = 150;
-    nf.Q.value = 0.6;
-    var ng = audioCtx.createGain();
-    ng.gain.value = 0.35;
+    var noise = audioCtx.createBufferSource(); noise.buffer = noiseBuf; noise.loop = true;
+    var nf = audioCtx.createBiquadFilter(); nf.type = "lowpass"; nf.frequency.value = 150; nf.Q.value = 0.6;
+    var ng = audioCtx.createGain(); ng.gain.value = 0.35;
     noise.connect(nf); nf.connect(ng); ng.connect(master);
-
-    osc1.start(now);
-    osc2.start(now);
-    osc3.start(now);
-    osc4.start(now);
-    noise.start(now);
-    lfo.start(now);
-
+    osc1.start(now); osc2.start(now); osc3.start(now); osc4.start(now); noise.start(now); lfo.start(now);
     humNodes = { master: master };
   }
 
@@ -1180,12 +1548,10 @@
     if (!audioCtx) return;
     var src = audioCtx.createBufferSource();
     src.buffer = clickBuf;
-    var g = audioCtx.createGain();
-    g.gain.value = vol;
+    var g = audioCtx.createGain(); g.gain.value = vol;
     src.connect(g); g.connect(audioCtx.destination);
     src.start();
   }
-
   function playPickupSound() {
     if (!audioCtx) return;
     var now = audioCtx.currentTime;
@@ -1195,29 +1561,29 @@
     osc.frequency.setValueAtTime(660, now);
     osc.frequency.exponentialRampToValueAtTime(1320, now + 0.09);
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.02, now + 0.012); // 0.02 громкость добычи руды
+    g.gain.linearRampToValueAtTime(0.02, now + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    osc.connect(g);
-    g.connect(audioCtx.destination);
-    osc.start(now);
-    osc.stop(now + 0.25);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.25);
   }
 
-  /* ============================================================
-     3D-мини-карта
-     ============================================================ */
+  // ============================================================
+  //  Мини-карта
+  // ============================================================
   var MAP_R = 13, MAP_W = 190, TILE_W = 7, TILE_H = 3.6, H_SCALE = 2.8, SKIRT = 3.2;
   var mapCanvas = document.getElementById("minimap");
   var mapCtx = mapCanvas.getContext("2d");
   var mapTick = 0;
 
   function nearestFloor(x, z, py) {
-    var y0 = Math.min(WORLD_H-2, Math.floor(py + 10));
+    var y0 = Math.min(WORLD_H - 2, Math.floor(py + 10));
     var y1 = Math.max(1, Math.floor(py - 18));
     var best = -1, bestD = 1e9;
     for (var y = y0; y >= y1; y--) {
-      if (grid[gIdx(x,y,z)] === 0 && grid[gIdx(x,y-1,z)] !== 0) {
-        var d = Math.abs(y+0.5 - py);
+      var above = grid[gIdx(x, y, z)];
+      var below = grid[gIdx(x, y - 1, z)];
+      if (above === 0 && (below === 1 || below === 2)) {
+        var d = Math.abs(y + 0.5 - py);
         if (d < bestD) { bestD = d; best = y; }
       }
     }
@@ -1235,13 +1601,13 @@
       for (var dx = -MAP_R; dx <= MAP_R; dx++) {
         if (dx*dx + dz*dz > MAP_R*MAP_R + MAP_R) continue;
         var x = px + dx, z = pz + dz;
-        if (x < 1 || x >= WORLD_W-1 || z < 1 || z >= WORLD_D-1) continue;
+        if (x < 1 || x >= WORLD_W - 1 || z < 1 || z >= WORLD_D - 1) continue;
         var fl = nearestFloor(x, z, py);
         if (fl < 0) continue;
         var ore = false;
-        for (var yy = fl-1; yy <= fl+2; yy++) {
+        for (var yy = fl - 1; yy <= fl + 2; yy++) {
           if (yy < 0 || yy >= WORLD_H) continue;
-          if (grid[gIdx(x,yy,z)] === 2) { ore = true; break; }
+          if (grid[gIdx(x, yy, z)] === 2) { ore = true; break; }
         }
         cells.push({ dx: dx, dz: dz, h: fl, ore: ore });
       }
@@ -1251,13 +1617,13 @@
       if (sa !== sb) return sa - sb;
       return a.h - b.h;
     });
-    var hw = TILE_W/2, hh = TILE_H/2;
-    var cx = W/2, cy = H/2 + 12;
+    var hw = TILE_W / 2, hh = TILE_H / 2;
+    var cx = W / 2, cy = H / 2 + 12;
     for (var i = 0; i < cells.length; i++) {
       var c = cells[i];
-      var sx = cx + (c.dx - c.dz)*hw;
-      var sy = cy + (c.dx + c.dz)*hh - (c.h - py)*H_SCALE;
-      var t = clamp(((c.h - py) + 9)/18, 0, 1);
+      var sx = cx + (c.dx - c.dz) * hw;
+      var sy = cy + (c.dx + c.dz) * hh - (c.h - py) * H_SCALE;
+      var t = clamp(((c.h - py) + 9) / 18, 0, 1);
       var r, g, b;
       if (c.ore) { r = 60 + t*60; g = 210 + t*45; b = 90 + t*50; }
       else { r = 22 + t*70; g = 58 + t*100; b = 30 + t*58; }
@@ -1278,16 +1644,16 @@
       mapCtx.closePath(); mapCtx.fillStyle = topCol; mapCtx.fill();
     }
     var selfFl = nearestFloor(px, pz, py);
-    var selfSy = (selfFl < 0) ? cy : cy - (selfFl - py)*H_SCALE;
+    var selfSy = (selfFl < 0) ? cy : cy - (selfFl - py) * H_SCALE;
     mapCtx.beginPath();
-    mapCtx.ellipse(cx, selfSy + hh*0.2, hw*1.25, hh*1.25, 0, 0, Math.PI*2);
+    mapCtx.ellipse(cx, selfSy + hh * 0.2, hw * 1.25, hh * 1.25, 0, 0, Math.PI * 2);
     mapCtx.fillStyle = "rgba(255,220,110,0.16)";
     mapCtx.fill();
     var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
-    var vx = fwdX*hw - fwdZ*hw, vy = fwdX*hh + fwdZ*hh;
+    var vx = fwdX * hw - fwdZ * hw, vy = fwdX * hh + fwdZ * hh;
     mapCtx.save();
     mapCtx.translate(cx, selfSy - 2);
-    mapCtx.rotate(Math.atan2(vy, vx) + Math.PI/2);
+    mapCtx.rotate(Math.atan2(vy, vx) + Math.PI / 2);
     mapCtx.beginPath();
     mapCtx.moveTo(0, -8); mapCtx.lineTo(5.2, 6);
     mapCtx.lineTo(0, 3); mapCtx.lineTo(-5.2, 6);
@@ -1299,15 +1665,15 @@
     mapCtx.restore();
     mapCtx.strokeStyle = "rgba(110,170,120,0.18)";
     mapCtx.lineWidth = 1;
-    mapCtx.strokeRect(0.5, 0.5, W-1, H-1);
+    mapCtx.strokeRect(0.5, 0.5, W - 1, H - 1);
   }
 
-  /* ============================================================
-     Игровой цикл
-     ============================================================ */
+  // ============================================================
+  //  Радиация и физика
+  // ============================================================
   function computeRadiation(px, py, pz) {
     var depthMeters = Math.max(0, ENTRANCE_Y - py);
-    var level = 0.15 + depthMeters * 0.04;
+    var level = RAD_BASE + depthMeters * RAD_PER_M;
     for (var i = 0; i < sources.length; i++) {
       var s = sources[i];
       var dx = px - s.x, dy = py - s.y, dz = pz - s.z;
@@ -1318,9 +1684,9 @@
 
   function collides(px, py, pz) {
     var r = PLAYER_RADIUS;
-    var x0 = Math.floor(px-r), x1 = Math.floor(px+r);
-    var y0 = Math.floor(py), y1 = Math.floor(py+PLAYER_HEIGHT);
-    var z0 = Math.floor(pz-r), z1 = Math.floor(pz+r);
+    var x0 = Math.floor(px - r), x1 = Math.floor(px + r);
+    var y0 = Math.floor(py), y1 = Math.floor(py + PLAYER_HEIGHT);
+    var z0 = Math.floor(pz - r), z1 = Math.floor(pz + r);
     for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) for (var z = z0; z <= z1; z++) {
       if (solidAt(x, y, z)) return true;
     }
@@ -1341,6 +1707,10 @@
     p[axis] += dist;
     if (!collides(p.x, p.y, p.z)) return;
     p[axis] -= dist;
+    if (PLAYER.onLadder) {
+      PLAYER.vel[axis] = 0;
+      return;
+    }
     var savedY = p.y;
     p.y += STEP_HEIGHT;
     p[axis] += dist;
@@ -1351,40 +1721,108 @@
     }
   }
 
+  function detectLadderInBox(p) {
+    var r = PLAYER_RADIUS;
+    var x0 = Math.floor(p.x - r + 0.01), x1 = Math.floor(p.x + r - 0.01);
+    var y0 = Math.floor(p.y + 0.1), y1 = Math.floor(p.y + PLAYER_HEIGHT - 0.1);
+    var z0 = Math.floor(p.z - r + 0.01), z1 = Math.floor(p.z + r - 0.01);
+    for (var y = y0; y <= y1; y++)
+      for (var x = x0; x <= x1; x++)
+        for (var z = z0; z <= z1; z++)
+          if (isLadder(x, y, z)) return true;
+    return false;
+  }
+
   function update(dt) {
     gameTime += dt;
     var p = PLAYER.pos;
     var fwdX = -Math.sin(PLAYER.yaw), fwdZ = -Math.cos(PLAYER.yaw);
     var rightX = Math.cos(PLAYER.yaw), rightZ = -Math.sin(PLAYER.yaw);
+
     var fwd = 0, strafe = 0;
     if (keys.KeyW || keys.ArrowUp) fwd += 1;
     if (keys.KeyS || keys.ArrowDown) fwd -= 1;
     if (keys.KeyD || keys.ArrowRight) strafe += 1;
     if (keys.KeyA || keys.ArrowLeft) strafe -= 1;
+
+    var onLadderCell = detectLadderInBox(p);
+    if (PLAYER.onLadder) {
+      if (!onLadderCell) PLAYER.onLadder = false;
+    } else {
+      if (onLadderCell && PLAYER.vel.y < -0.3) {
+        PLAYER.onLadder = true;
+        PLAYER.vel.y = 0;
+      }
+    }
+
+    if (PLAYER.onLadder) {
+      var climbDir = 0;
+      if (keys.KeyW || keys.ArrowUp) climbDir += 1;
+      if (keys.KeyS || keys.ArrowDown) climbDir -= 1;
+      if (climbDir !== 0) {
+        var nextY = p.y + climbDir * CLIMB_SPEED * dt;
+        var nextFeetCell = Math.floor(nextY + 0.1);
+        var feetX = Math.floor(p.x);
+        var feetZ = Math.floor(p.z);
+        if (isLadder(feetX, nextFeetCell, feetZ)) {
+          PLAYER.vel.y = climbDir * CLIMB_SPEED;
+          fwd = 0;
+        } else {
+          PLAYER.vel.y = 0;
+        }
+      } else {
+        PLAYER.vel.y = 0;
+      }
+    }
+
     var speed = (keys.ShiftLeft || keys.ShiftRight) ? RUN_SPEED : WALK_SPEED;
     if (fwd !== 0 || strafe !== 0) {
-      var inv = 1 / Math.sqrt(fwd*fwd + strafe*strafe);
+      var inv = 1 / Math.sqrt(fwd * fwd + strafe * strafe);
       fwd *= inv; strafe *= inv;
-      PLAYER.vel.x = (fwdX*fwd + rightX*strafe) * speed;
-      PLAYER.vel.z = (fwdZ*fwd + rightZ*strafe) * speed;
-    } else { PLAYER.vel.x = 0; PLAYER.vel.z = 0; }
-    if (keys.Space && PLAYER.onGround) { PLAYER.vel.y = JUMP_VEL; PLAYER.onGround = false; }
-    PLAYER.onGround = false;
-    PLAYER.vel.y -= GRAVITY * dt;
-    if (PLAYER.vel.y < -40) PLAYER.vel.y = -40;
-    tryMove("x", PLAYER.vel.x*dt);
-    tryMove("y", PLAYER.vel.y*dt);
-    tryMove("z", PLAYER.vel.z*dt);
+      PLAYER.vel.x = (fwdX * fwd + rightX * strafe) * speed;
+      PLAYER.vel.z = (fwdZ * fwd + rightZ * strafe) * speed;
+    } else {
+      PLAYER.vel.x = 0;
+      PLAYER.vel.z = 0;
+    }
 
-    // Сбор руды + анимация кристаллов
+    var wasOnGround = PLAYER.onGround;
+    PLAYER.onGround = false;
+    if (!PLAYER.onLadder) {
+      if (keys.Space && wasOnGround) {
+        PLAYER.vel.y = JUMP_VEL;
+      } else {
+        PLAYER.vel.y -= GRAVITY * dt;
+        if (PLAYER.vel.y < -40) PLAYER.vel.y = -40;
+      }
+    }
+
+    tryMove("x", PLAYER.vel.x * dt);
+    tryMove("y", PLAYER.vel.y * dt);
+    tryMove("z", PLAYER.vel.z * dt);
+
+    var ch = document.getElementById("crosshair");
+    if (ch) {
+      if (PLAYER.onLadder) {
+        ch.style.background = "#88ff88";
+        ch.style.boxShadow = "0 0 10px rgba(120,255,120,1)";
+      } else {
+        ch.style.background = "rgba(255,255,255,0.55)";
+        ch.style.boxShadow = "0 0 6px rgba(160,255,170,0.8)";
+      }
+    }
+    var lh = document.getElementById("ladderHint");
+    if (lh) {
+      if (PLAYER.onLadder) lh.classList.add("show");
+      else lh.classList.remove("show");
+    }
+
     for (var oi = 0; oi < oreItems.length; oi++) {
       var it = oreItems[oi];
       if (it.collected) continue;
       it.mesh.rotation.y += dt * 1.8;
       it.mesh.position.y = it.baseY + Math.sin(gameTime * 2 + it.phase) * 0.09;
-
-      var odx = p.x - it.x;
-      var odz = p.z - it.z;
+      var odx = p.x - it.x, odz = p.z - it.z;
       var ody = (p.y + 0.5) - it.baseY;
       if (odx*odx + odz*odz < ORE_PICKUP_RADIUS2 && Math.abs(ody) < 1.6) {
         it.collected = true;
@@ -1397,15 +1835,15 @@
     }
 
     var level = computeRadiation(p.x, p.y, p.z);
-    if (level > 0.8) PLAYER.dose += level * DOSE_FACTOR * dt;
-    else PLAYER.dose = Math.max(0, PLAYER.dose - RECOVER_RATE*dt);
+    if (level > RAD_RECOVER_THRESHOLD) PLAYER.dose += level * DOSE_FACTOR * dt;
+    else PLAYER.dose = Math.max(0, PLAYER.dose - RECOVER_RATE * dt);
     var depth = Math.max(0, ENTRANCE_Y - p.y);
     if (depth > PLAYER.maxDepth) PLAYER.maxDepth = depth;
 
-    clickInterval = clamp(1.2 / (0.3 + level*0.01), 0.03, 1.4);
+    clickInterval = clamp(1.2 / (0.3 + level * 0.01), 0.03, 1.4);
     clickTimer += dt;
     if (clickTimer >= clickInterval) {
-      var vol = clamp(0.06 + level*0.00015, 0.04, 0.6);
+      var vol = clamp(0.06 + level * 0.00015, 0.04, 0.6);
       playClick(vol);
       clickTimer = 0;
     }
@@ -1422,8 +1860,8 @@
     camera.rotation.y = PLAYER.yaw;
     camera.rotation.x = PLAYER.pitch;
     var cp = Math.cos(PLAYER.pitch);
-    var lx = -Math.sin(PLAYER.yaw)*cp, ly = Math.sin(PLAYER.pitch), lz = -Math.cos(PLAYER.yaw)*cp;
-    flashTarget.position.set(p.x + lx*8, p.y + PLAYER_EYE + ly*8, p.z + lz*8);
+    var lx = -Math.sin(PLAYER.yaw) * cp, ly = Math.sin(PLAYER.pitch), lz = -Math.cos(PLAYER.yaw) * cp;
+    flashTarget.position.set(p.x + lx * 8, p.y + PLAYER_EYE + ly * 8, p.z + lz * 8);
     flash.position.copy(camera.position);
     updateHUD(level, depth);
     mapTick++;
@@ -1438,7 +1876,7 @@
     else if (level < 10) radValue.style.color = "#d0d040";
     else if (level < 100) radValue.style.color = "#e09040";
     else radValue.style.color = "#ff4a40";
-    radBar.style.width = Math.min(100, level*3) + "%";
+    radBar.style.width = Math.min(100, level * 3) + "%";
     var doseValue = document.getElementById("doseValue");
     var doseBar = document.getElementById("doseBar");
     doseValue.textContent = PLAYER.dose.toFixed(1) + "%";
@@ -1448,12 +1886,50 @@
     document.getElementById("depthMax").textContent = "Рекорд: " + PLAYER.maxDepth.toFixed(1) + " м";
   }
 
+  // Ищем валидную точку спавна рядом с entrance (x,z,y — уровень).
+  function findSpawnPoint(x, z, y) {
+    // 1) Идеальная позиция: сами координаты и уровень, чуть выше пола.
+    var testX = x + 0.5, testZ = z + 0.5;
+    for (var testY = y + 1; testY >= y - 8; testY--) {
+      if (testY < 2) break;
+      if (!solidAt(Math.floor(testX), testY, Math.floor(testZ)) &&
+          !solidAt(Math.floor(testX), testY + 1, Math.floor(testZ)) &&
+          solidAt(Math.floor(testX), testY - 1, Math.floor(testZ))) {
+        return { x: testX, y: testY + 0.1, z: testZ };
+      }
+    }
+    // 2) Не нашли — спираль по расширяющемуся радиусу.
+    for (var r = 1; r <= 12; r++) {
+      for (var da = 0; da < 24; da++) {
+        var ang = (da / 24) * Math.PI * 2;
+        var tx = Math.round(x + Math.cos(ang) * r);
+        var tz = Math.round(z + Math.sin(ang) * r);
+        if (tx < 2 || tx >= WORLD_W - 2 || tz < 2 || tz >= WORLD_D - 2) continue;
+        for (var ty = y + 4; ty >= y - 16; ty--) {
+          if (ty < 2) break;
+          if (!solidAt(tx, ty, tz) && !solidAt(tx, ty + 1, tz) && solidAt(tx, ty - 1, tz)) {
+            return { x: tx + 0.5, y: ty + 0.1, z: tz + 0.5 };
+          }
+        }
+      }
+    }
+    // 3) Совсем ничего не нашли — возвращаем как есть.
+    return { x: x + 0.5, y: y + 0.1, z: z + 0.5 };
+  }
+
   function resetGame(entrance) {
-    PLAYER.pos.set(entrance.x + 0.5, entrance.y + 1.5, entrance.z + 0.5);
+    var sp = findSpawnPoint(entrance.x, entrance.z, entrance.y);
+    PLAYER.pos.set(sp.x, sp.y, sp.z);
+    var guard = 0;
+    while (collides(PLAYER.pos.x, PLAYER.pos.y, PLAYER.pos.z) && guard < 60) {
+      PLAYER.pos.y -= 0.05;
+      guard++;
+    }
     PLAYER.vel.set(0, 0, 0);
-    PLAYER.yaw = entrance.yaw + Math.PI;
+    PLAYER.yaw = entrance.yaw;
     PLAYER.pitch = -0.05;
     PLAYER.onGround = false;
+    PLAYER.onLadder = false;
     PLAYER.dose = 0;
     PLAYER.maxDepth = 0;
     clickTimer = 0;
@@ -1461,8 +1937,9 @@
     pickupHintTimer = 0;
     var ph = document.getElementById("pickupHint");
     if (ph) ph.classList.remove("show");
+    var lh = document.getElementById("ladderHint");
+    if (lh) lh.classList.remove("show");
 
-    // Сброс руды
     oreCollected = 0;
     for (var oi = 0; oi < oreItems.length; oi++) {
       oreItems[oi].collected = false;
@@ -1482,6 +1959,7 @@
   }
 
   function startGame() {
+    if (!startPos) return;
     initAudio();
     document.getElementById("overlayStart").classList.add("hidden");
     document.getElementById("overlayDead").classList.add("hidden");
@@ -1494,23 +1972,12 @@
   document.getElementById("btnStart").addEventListener("click", startGame);
   document.getElementById("btnRestart").addEventListener("click", startGame);
 
-  /* ============================================================
-     Запуск
-     ============================================================ */
-  startPos = generateMine();
-  buildGeometry();
-  buildDecor();
-  buildOrePickups();
-
-  var ceilingExit = buildCeilingExit();
-
-  // Клик по панели (работает даже при pointer lock)
   var _exitRay = new THREE.Raycaster();
-  var _screenCenter = new THREE.Vector2(0, 0); // NDC-центр экрана
+  var _screenCenter = new THREE.Vector2(0, 0);
 
   canvas.addEventListener("mousedown", function () {
     if (gameState !== "playing" || document.pointerLockElement !== canvas) return;
-
+    if (!ceilingExit) return;
     _exitRay.setFromCamera(_screenCenter, camera);
     var hits = _exitRay.intersectObject(ceilingExit, false);
     if (hits.length > 0 && hits[0].distance < 25) {
@@ -1519,11 +1986,9 @@
     }
   });
 
-  resetGame(startPos);
-  camera.position.set(PLAYER.pos.x, PLAYER.pos.y + PLAYER_EYE, PLAYER.pos.z);
-  camera.rotation.y = PLAYER.yaw;
-  camera.rotation.x = PLAYER.pitch;
-
+  // ============================================================
+  //  Асинхронная инициализация
+  // ============================================================
   var clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
@@ -1534,7 +1999,41 @@
     }
     renderer.render(scene, camera);
   }
-  animate();
+
+  function showLoadError(err) {
+    var ov = document.getElementById("overlayStart");
+    ov.innerHTML =
+      '<h1 style="color:#e05540">ОШИБКА</h1>' +
+      '<p>Не удалось загрузить конфигурацию подземелья.</p>' +
+      '<p style="color:#e0a040; font-family:monospace">' + (err && err.message ? err.message : String(err)) + '</p>' +
+      '<p>Проверьте, что рядом с этим HTML-файлом лежит <b>dungeon.js</b> ' +
+      'и в нём есть <b>window.DUNGEON_CONFIG</b>.</p>' +
+      '<p style="font-size:12px;color:#8f9a8f">Вариант с <b>dungeon.json</b> работает только ' +
+      'при запуске через HTTP-сервер.</p>';
+  }
+
+  loadDungeon("dungeon.json").then(function (cfg) {
+    applyConfig(cfg);
+    buildMaterials(cfg);
+    buildWorld(cfg);
+    buildGeometry();
+    buildRailGeometry();
+    buildLadderGeometry();
+    buildDecor();
+    buildOrePickups();
+    buildCeilingExit();
+    resetGame(startPos);
+    camera.position.set(PLAYER.pos.x, PLAYER.pos.y + PLAYER_EYE, PLAYER.pos.z);
+    camera.rotation.y = PLAYER.yaw;
+    camera.rotation.x = PLAYER.pitch;
+
+    var btn = document.getElementById("btnStart");
+    btn.disabled = false;
+    btn.textContent = "НАЧАТЬ";
+
+    animate();
+  }).catch(showLoadError);
+
 })();
 </script>
 </body>

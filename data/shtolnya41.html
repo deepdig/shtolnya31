@@ -148,7 +148,7 @@
 </div>
 
 <script src="js/three.min.js"></script>
-<script src="dungeon.js"></script>
+<script src="maps/shtolnya41.js"></script>
 <script>
 (function () {
   "use strict";
@@ -831,14 +831,28 @@
     // --- Руда (урановые вкрапления) ---
     for (var oi = 0; oi < cfg.oreSources.length; oi++) {
       var o = cfg.oreSources[oi];
-      var oy = levelY[o.level] + 1;
-      var placed = carveOreSphere(o.at[0], oy, o.at[1], o.radius || 1.2);
-      if (placed > 0) {
-        sources.push({
-          x: o.at[0] + 0.5, y: oy + 0.5, z: o.at[1] + 0.5,
-          strength: o.strength || 1600
-        });
-      }
+      var lv = levelY[o.level];
+      if (lv === undefined) continue;
+
+      // Радиус не меньше 2.5 — иначе сфера не достаёт до камня сквозь
+      // 3 воздушных вокселя туннеля.
+      var r = Math.max(o.radius || 1.2, 2.5);
+
+      // Три сферы: пол (lv), середина, потолок (lv + TUNNEL_HEIGHT).
+      // Пол и потолок гарантированно попадают в камень — их верхние/нижние
+      // грани видны изнутри и рендерятся uranMesh.
+      carveOreSphere(o.at[0], lv,                  o.at[1], r);
+      carveOreSphere(o.at[0], lv + Math.floor(TUNNEL_HEIGHT / 2), o.at[1], r);
+      carveOreSphere(o.at[0], lv + TUNNEL_HEIGHT,  o.at[1], r);
+
+      // Источник регистрируем ВСЕГДА, даже если вокселей 0 — иначе
+      // не будет пикапов и радиации рядом с месторождением.
+      sources.push({
+        x: o.at[0] + 0.5,
+        y: lv + Math.floor(TUNNEL_HEIGHT / 2) + 0.5,
+        z: o.at[1] + 0.5,
+        strength: o.strength || 1600
+      });
     }
 
     // --- Явные таблички ---
