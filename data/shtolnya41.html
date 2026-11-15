@@ -863,7 +863,13 @@
           x: sg.at[0], y: levelY[sg.level] + (sg.height || 2), z: sg.at[1],
           text: sg.text,
           faceX: sg.face ? sg.face[0] : 1,
-          faceZ: sg.face ? sg.face[1] : 0
+          faceZ: sg.face ? sg.face[1] : 0,
+          style: {
+            bgColor: sg.bgColor,
+            borderColor: sg.borderColor,
+            textColor: sg.textColor,
+            size: sg.size
+          }
         });
       }
     }
@@ -1207,39 +1213,61 @@
   var SIGN_GEO = new THREE.PlaneGeometry(SIGN_W, SIGN_H);
   var SIGN_OFFSET = 0.78;
 
-  function makeSignTexture(text) {
-    if (signTextures[text]) return signTextures[text];
+  function makeSignTexture(text, style) {
+    style = style || {};
+    var bg     = style.bgColor     || "#2a2c25";
+    var border = style.borderColor || "#c9c49b";
+    var tcol   = style.textColor   || "#ece8ce";
+
+    // Кэш по всем параметрам, влияющим на картинку
+    var cacheKey = text + "|" + bg + "|" + border + "|" + tcol;
+    if (signTextures[cacheKey]) return signTextures[cacheKey];
+
     var w = 512, h = 128;
     var cv = document.createElement("canvas");
     cv.width = w; cv.height = h;
     var ctx = cv.getContext("2d");
-    ctx.fillStyle = "#2a2c25"; ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Потёртости — прозрачные пятна, работают на любом фоне
     for (var i = 0; i < 44; i++) {
-      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," + ((68+Math.random()*34)|0) + ",32," + (0.03+Math.random()*0.09).toFixed(3) + ")";
+      ctx.fillStyle = "rgba(" + ((105+Math.random()*55)|0) + "," +
+                               ((68+Math.random()*34)|0) + ",32," +
+                               (0.03+Math.random()*0.09).toFixed(3) + ")";
       ctx.beginPath();
       ctx.arc(Math.random()*w, Math.random()*h, 5+Math.random()*34, 0, Math.PI*2);
       ctx.fill();
     }
-    ctx.strokeStyle = "#c9c49b"; ctx.lineWidth = 6;
+
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 6;
     ctx.strokeRect(7, 7, w-14, h-14);
-    ctx.fillStyle = "#ece8ce"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+
+    ctx.fillStyle = tcol;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     var fs = 68;
     ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
     while (ctx.measureText(text).width > w - 64 && fs > 20) {
-      fs -= 4; ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
+      fs -= 4;
+      ctx.font = "bold " + fs + "px 'Segoe UI', Arial, sans-serif";
     }
     ctx.fillText(text, w/2, h/2 + 3);
-    var tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4;
-    signTextures[text] = tex;
+
+    var tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    signTextures[cacheKey] = tex;
     return tex;
   }
 
-  function tryWallSign(x, y, z, text, prefFaceX, prefFaceZ) {
-    if (tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, true)) return true;
-    return tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, false);
+  function tryWallSign(x, y, z, text, prefFaceX, prefFaceZ, style) {
+    if (tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, style, true)) return true;
+    return tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, style, false);
   }
 
-  function tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, strict) {
+  function tryWallSignImpl(x, y, z, text, prefFaceX, prefFaceZ, style, strict) {
     var xi = Math.round(x), zi = Math.round(z);
     var dirs = [];
     if (prefFaceX !== undefined && prefFaceZ !== undefined) {
@@ -1286,10 +1314,18 @@
             }
             if (!sup) continue;
           }
-          var mat = new THREE.MeshBasicMaterial({ map: makeSignTexture(text), color: 0xbbbbbb, side: THREE.DoubleSide });
+          var mat = new THREE.MeshBasicMaterial({
+            map: makeSignTexture(text, style),
+            color: 0xbbbbbb,
+            side: THREE.DoubleSide
+          });
           var mesh = new THREE.Mesh(SIGN_GEO, mat);
           mesh.position.set(wx + 0.5 - dx * SIGN_OFFSET, yTry + 0.5, wz + 0.5 - dz * SIGN_OFFSET);
           mesh.rotation.y = Math.atan2(-dx, -dz);
+          if (style && style.size && SIGN_W > 0) {
+            var k = style.size / SIGN_W;
+            mesh.scale.set(k, k, 1);
+          }
           signGroup.add(mesh);
           return true;
         }
@@ -1404,7 +1440,7 @@
     signGroup = new THREE.Group();
     for (var i = 0; i < signRequests.length; i++) {
       var req = signRequests[i];
-      tryWallSign(req.x, req.y, req.z, req.text, req.faceX, req.faceZ);
+      tryWallSign(req.x, req.y, req.z, req.text, req.faceX, req.faceZ, req.style);
     }
     scene.add(signGroup);
 

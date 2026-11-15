@@ -340,6 +340,20 @@ window.DUNGEON_CONFIG = {
         100,
         52
       ]
+    },
+    {
+      "id": "t23",
+      "level": 0,
+      "style": "main",
+      "rails": true,
+      "from": [
+        36,
+        164
+      ],
+      "to": [
+        36,
+        184
+      ]
     }
   ],
   "junctions": [],
@@ -833,6 +847,62 @@ window.DUNGEON_CONFIG = {
       ],
       "yaw": 0,
       "ore": false
+    }
+  ],
+  "signs": [
+    {
+      "id": "sg0",
+      "level": 0,
+      "at": [
+        84,
+        65
+      ],
+      "height": 1,
+      "text": "Квершлаг 5",
+      "face": [
+        0,
+        -2
+      ],
+      "bgColor": "#2a2c25",
+      "borderColor": "#c9c49b",
+      "textColor": "#ece8ce",
+      "size": 1.5
+    },
+    {
+      "id": "sg1",
+      "level": 0,
+      "at": [
+        68,
+        113
+      ],
+      "height": 2,
+      "text": "Квершлаг 10",
+      "face": [
+        1,
+        0
+      ],
+      "bgColor": "#2a2c25",
+      "borderColor": "#c9c49b",
+      "textColor": "#ece8ce",
+      "size": 1.5
+    },
+    {
+      "id": "sg2",
+      "level": 0,
+      "at": [
+        81,
+        28
+      ],
+      "height": 1,
+      "text": "Центральный штрек",
+      "face": [
+        1,
+        0
+      ],
+      "bgColor": "#2a2c25",
+      "borderColor": "#c9c49b",
+      "textColor": "#ece8ce",
+      "size": 1.5
     }
   ]
 };

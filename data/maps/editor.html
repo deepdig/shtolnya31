@@ -49,6 +49,10 @@
     width: 100%; padding: 4px 6px; background: #1a1c1a; border: 1px solid #3a403a;
     color: #d0d8d0; border-radius: 3px; font-size: 12px; font-family: inherit;
   }
+  .field input[type="color"] {
+    width: 100%; height: 28px; padding: 2px 4px; background: #1a1c1a;
+    border: 1px solid #3a403a; border-radius: 3px; cursor: pointer;
+  }
   .field .row { display: flex; gap: 4px; }
   .field .row input { flex: 1; min-width: 0; }
   .field input[type="checkbox"] { margin-right: 6px; }
@@ -95,6 +99,7 @@
     <button class="toolBtn" data-tool="ore">◆ Руда</button>
     <button class="toolBtn" data-tool="cart">⬛ Вагонетка</button>
     <button class="toolBtn" data-tool="start">▶ Старт</button>
+    <button class="toolBtn" data-tool="sign">📝 Табличка</button>
     <button class="toolBtn" data-tool="texture">▦ Текстуры</button>
   </div>
 
@@ -158,7 +163,7 @@
       },
       "levels": [{ "id": 0, "y": 64, "name": "Горизонт 0" }],
       "start": { "level": 0, "at": [48, 48], "yaw": 0 },
-      "tunnels": [], "junctions": [], "rooms": [], "shafts": [], "oreSources": [], "carts": []
+      "tunnels": [], "junctions": [], "rooms": [], "shafts": [], "oreSources": [], "carts": [], "signs": []
     };
   }
 
@@ -166,7 +171,7 @@
     ? JSON.parse(JSON.stringify(window.DUNGEON_CONFIG))
     : defaultConfig();
 
-  ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+  ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts', 'signs'].forEach(function (k) {
     if (!Array.isArray(cfg[k])) cfg[k] = [];
   });
   if (!Array.isArray(cfg.levels) || cfg.levels.length === 0) {
@@ -209,7 +214,7 @@
   function nextId(prefix) {
     var maxN = -1;
     var re = new RegExp('^' + prefix + '(\\d+)$');
-    ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+    ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts', 'signs'].forEach(function (k) {
       cfg[k].forEach(function (el) {
         if (el.id) {
           var m = String(el.id).match(re);
@@ -404,6 +409,54 @@
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     });
 
+    // Таблички
+    cfg.signs.forEach(function (sg) {
+      if (sg.level !== currentLevelId) return;
+      var p = worldToScreen(sg.at[0], sg.at[1]);
+      var ww = Math.max(28, (sg.size || 1.5) * view.scale);
+      var hh = Math.max(10, ww * 0.35);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+
+      // Стрелка направления (куда ищем стену)
+      if (sg.face && (sg.face[0] || sg.face[1])) {
+        var fl = ww * 0.55;
+        ctx.strokeStyle = 'rgba(160,200,255,0.75)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(sg.face[0] * fl, sg.face[1] * fl);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(160,200,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(sg.face[0] * fl, sg.face[1] * fl, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Плашка
+      ctx.fillStyle = sg.bgColor || '#2a2c25';
+      ctx.fillRect(-ww / 2, -hh / 2, ww, hh);
+      ctx.strokeStyle = sg.borderColor || '#c9c49b';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-ww / 2, -hh / 2, ww, hh);
+
+      // Текст
+      ctx.fillStyle = sg.textColor || '#ece8ce';
+      var fs = Math.max(8, hh * 0.55);
+      ctx.font = fs + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var label = String(sg.text || '');
+      if (label.length > 12) label = label.substring(0, 11) + '…';
+      ctx.fillText(label, 0, 0);
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
+    });
+
     // Руда
     cfg.oreSources.forEach(function (o) {
       if (o.level !== currentLevelId) return;
@@ -457,7 +510,7 @@
       ctx.setLineDash([]);
     }
 
-    // Индикатор выхода на поверхность — над Стартом на верхнем уровне.    
+    // Индикатор выхода на поверхность — над Стартом на верхнем уровне.
     if (cfg.levels[0] && cfg.levels[0].id === currentLevelId && cfg.start) {
       var ep = worldToScreen(cfg.start.at[0], cfg.start.at[1]);
       ctx.save();
@@ -503,6 +556,9 @@
       } else if (selected.type === 'start') {
         var p4 = worldToScreen(obj.at[0], obj.at[1]);
         ctx.beginPath(); ctx.arc(p4.x, p4.y, 16, 0, Math.PI * 2); ctx.stroke();
+      } else if (selected.type === 'sign') {
+        var p6 = worldToScreen(obj.at[0], obj.at[1]);
+        ctx.beginPath(); ctx.arc(p6.x, p6.y, 20, 0, Math.PI * 2); ctx.stroke();
       } else if (obj.at) {
         var p5 = worldToScreen(obj.at[0], obj.at[1]);
         ctx.beginPath(); ctx.arc(p5.x, p5.y, 14, 0, Math.PI * 2); ctx.stroke();
@@ -588,6 +644,13 @@
       if (j.level !== currentLevelId) return;
       var dd = Math.sqrt(Math.pow(wx - j.at[0], 2) + Math.pow(wz - j.at[1], 2));
       if (dd < TH && dd < bestDist) { bestDist = dd; best = { type: 'junction', obj: j, arrayName: 'junctions' }; }
+    });
+    cfg.signs.forEach(function (sg) {
+      if (sg.level !== currentLevelId) return;
+      var dd = Math.sqrt(Math.pow(wx - sg.at[0], 2) + Math.pow(wz - sg.at[1], 2));
+      if (dd < TH && dd < bestDist) {
+        bestDist = dd; best = { type: 'sign', obj: sg, arrayName: 'signs' };
+      }
     });
     cfg.tunnels.forEach(function (t) {
       if (t.level !== currentLevelId) return;
@@ -687,6 +750,23 @@
       cfg.start.level = currentLevelId;
       cfg.start.at = [Math.round(w.x), Math.round(w.z)];
       selected = { type: 'start', obj: cfg.start, arrayName: null };
+      renderProps(); redraw();
+    }
+    else if (tool === 'sign') {
+      var sg = {
+        id: nextId('sg'),
+        level: currentLevelId,
+        at: [Math.round(w.x), Math.round(w.z)],
+        height: 2,
+        text: 'Надпись',
+        face: [1, 0],
+        bgColor: '#2a2c25',
+        borderColor: '#c9c49b',
+        textColor: '#ece8ce',
+        size: 1.5
+      };
+      cfg.signs.push(sg);
+      selected = { type: 'sign', obj: sg, arrayName: 'signs' };
       renderProps(); redraw();
     }
   });
@@ -1244,6 +1324,7 @@
     cfg.shafts.forEach(function (s) { consider(s.at[0], s.at[1]); });
     cfg.oreSources.forEach(function (o) { consider(o.at[0], o.at[1]); });
     cfg.carts.forEach(function (c) { consider(c.at[0], c.at[1]); });
+    cfg.signs.forEach(function (sg) { consider(sg.at[0], sg.at[1]); });
     if (cfg.start) consider(cfg.start.at[0], cfg.start.at[1]);
 
     if (!isFinite(minX)) { setStatus('Нет элементов для расширения'); return; }
@@ -1269,6 +1350,7 @@
     cfg.shafts.forEach(function (s) { shiftCoord(s.at); });
     cfg.oreSources.forEach(function (o) { shiftCoord(o.at); });
     cfg.carts.forEach(function (c) { shiftCoord(c.at); });
+    cfg.signs.forEach(function (sg) { shiftCoord(sg.at); });
     if (cfg.start) shiftCoord(cfg.start.at);
 
     var newWidth = Math.ceil(maxX + shiftX + margin);
@@ -1308,7 +1390,11 @@
   }
 
   function labelForType(t) {
-    return { tunnel: 'Туннель', junction: 'Перекрёсток', room: 'Камера', shaft: 'Шахта', ore: 'Руда', cart: 'Вагонетка', start: 'Старт' }[t] || t;
+    return {
+      tunnel: 'Туннель', junction: 'Перекрёсток', room: 'Камера',
+      shaft: 'Шахта', ore: 'Руда', cart: 'Вагонетка',
+      start: 'Старт', sign: 'Табличка'
+    }[t] || t;
   }
 
   function fieldNumber(label, key, val, isInt) {
@@ -1343,6 +1429,11 @@
       '<input type="number" data-key="' + key + '" data-kind="vec2" data-idx="0" value="' + esc(val[0]) + '" step="' + stepAttr + '">' +
       '<input type="number" data-key="' + key + '" data-kind="vec2" data-idx="1" value="' + esc(val[1]) + '" step="' + stepAttr + '">' +
       '</div></div>';
+  }
+  function fieldColor(label, key, val) {
+    var hex = (typeof val === 'string' && /^#[0-9a-f]{6}$/i.test(val)) ? val : '#000000';
+    return '<div class="field"><label>' + label + '</label>' +
+      '<input type="color" data-key="' + key + '" value="' + hex + '"></div>';
   }
 
   function levelOptions() {
@@ -1402,6 +1493,21 @@
            '↑ Потолочный люк выхода на поверхность автоматически располагается ' +
            'над точкой Старта на верхнем уровне. При перемещении Старта он едет вместе с ним.' +
            '</p>';
+    } else if (type === 'sign') {
+      h += fieldText('ID', 'id', obj.id);
+      h += fieldSelect('Уровень', 'level', obj.level, levelOptions(), 'int');
+      h += fieldVec2('Позиция (x, z)', 'at', obj.at, true);
+      h += fieldNumber('Высота над полом', 'height', obj.height != null ? obj.height : 2, true);
+      h += fieldText('Надпись', 'text', obj.text);
+      h += fieldVec2('Направление к стене (dx, dz)', 'face', obj.face || [1, 0], true);
+      h += fieldColor('Цвет фона', 'bgColor', obj.bgColor || '#2a2c25');
+      h += fieldColor('Цвет рамки', 'borderColor', obj.borderColor || '#c9c49b');
+      h += fieldColor('Цвет текста', 'textColor', obj.textColor || '#ece8ce');
+      h += fieldNumber('Ширина (world units)', 'size', obj.size || 1.5, false);
+      h += '<p class="hint" style="margin-top:10px;color:#8fbf8f;">' +
+           '<b>face</b> — направление поиска стены (не взгляд таблички).<br>' +
+           'Например [1,0] — ищем стену справа по X. Игра ищет в пределах 4 блоков.' +
+           '</p>';
     }
     return h;
   }
@@ -1433,7 +1539,7 @@
     if (!lv) return;
     if (!confirm('Удалить уровень «' + (lv.name || lv.id) + '» и все его элементы?')) return;
 
-    ['tunnels', 'junctions', 'rooms', 'oreSources', 'carts'].forEach(function (k) {
+    ['tunnels', 'junctions', 'rooms', 'oreSources', 'carts', 'signs'].forEach(function (k) {
       cfg[k] = cfg[k].filter(function (el) { return el.level !== currentLevelId; });
     });
     cfg.shafts = cfg.shafts.filter(function (s) {
@@ -1526,7 +1632,7 @@
         if (!parsed) throw new Error('не удалось распознать формат (нужен dungeon.js или dungeon.json)');
 
         cfg = parsed;
-        ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts'].forEach(function (k) {
+        ['tunnels', 'junctions', 'rooms', 'shafts', 'oreSources', 'carts', 'signs'].forEach(function (k) {
           if (!Array.isArray(cfg[k])) cfg[k] = [];
         });
         if (!Array.isArray(cfg.levels) || cfg.levels.length === 0) {
