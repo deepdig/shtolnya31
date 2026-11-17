@@ -97,16 +97,6 @@ window.DUNGEON_CONFIG = {
       "id": 2,
       "y": 40,
       "name": "Горизонт -24 м"
-    },
-    {
-      "id": 3,
-      "y": 28,
-      "name": "Горизонт -36 м"
-    },
-    {
-      "id": 4,
-      "y": 16,
-      "name": "Горизонт -48 м"
     }
   ],
   "start": {
@@ -283,7 +273,7 @@ window.DUNGEON_CONFIG = {
       ],
       "to": [
         24,
-        113
+        111
       ]
     },
     {
@@ -312,202 +302,6 @@ window.DUNGEON_CONFIG = {
       "to": [
         12,
         113
-      ]
-    },
-    {
-      "id": "L3_ew",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        10,
-        89
-      ],
-      "to": [
-        86,
-        89
-      ]
-    },
-    {
-      "id": "L3_ns",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        48,
-        51
-      ],
-      "to": [
-        48,
-        127
-      ]
-    },
-    {
-      "id": "L3_loopN",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        65
-      ],
-      "to": [
-        72,
-        65
-      ]
-    },
-    {
-      "id": "L3_loopS",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        113
-      ],
-      "to": [
-        72,
-        113
-      ]
-    },
-    {
-      "id": "L3_loopW",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        65
-      ],
-      "to": [
-        24,
-        113
-      ]
-    },
-    {
-      "id": "L3_loopE",
-      "level": 3,
-      "style": "main",
-      "rails": true,
-      "from": [
-        72,
-        65
-      ],
-      "to": [
-        72,
-        113
-      ]
-    },
-    {
-      "id": "L3_dead",
-      "level": 3,
-      "style": "branch",
-      "rails": false,
-      "from": [
-        72,
-        65
-      ],
-      "to": [
-        84,
-        65
-      ]
-    },
-    {
-      "id": "L4_ew",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        10,
-        89
-      ],
-      "to": [
-        86,
-        89
-      ]
-    },
-    {
-      "id": "L4_ns",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        48,
-        51
-      ],
-      "to": [
-        48,
-        127
-      ]
-    },
-    {
-      "id": "L4_loopN",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        65
-      ],
-      "to": [
-        72,
-        65
-      ]
-    },
-    {
-      "id": "L4_loopS",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        113
-      ],
-      "to": [
-        72,
-        113
-      ]
-    },
-    {
-      "id": "L4_loopW",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        24,
-        65
-      ],
-      "to": [
-        24,
-        113
-      ]
-    },
-    {
-      "id": "L4_loopE",
-      "level": 4,
-      "style": "main",
-      "rails": true,
-      "from": [
-        72,
-        65
-      ],
-      "to": [
-        72,
-        113
-      ]
-    },
-    {
-      "id": "L4_dead",
-      "level": 4,
-      "style": "branch",
-      "rails": false,
-      "from": [
-        72,
-        113
-      ],
-      "to": [
-        72,
-        125
       ]
     },
     {
@@ -542,7 +336,7 @@ window.DUNGEON_CONFIG = {
       "id": "t2",
       "level": 0,
       "style": "main",
-      "rails": true,
+      "rails": false,
       "from": [
         61,
         117
@@ -556,7 +350,7 @@ window.DUNGEON_CONFIG = {
       "id": "t3",
       "level": 0,
       "style": "main",
-      "rails": true,
+      "rails": false,
       "from": [
         61,
         79
@@ -584,7 +378,7 @@ window.DUNGEON_CONFIG = {
       "id": "t5",
       "level": 0,
       "style": "main",
-      "rails": true,
+      "rails": false,
       "from": [
         61,
         133
@@ -634,6 +428,34 @@ window.DUNGEON_CONFIG = {
       "to": [
         61,
         45
+      ]
+    },
+    {
+      "id": "t9",
+      "level": 0,
+      "style": "main",
+      "rails": false,
+      "from": [
+        80,
+        116
+      ],
+      "to": [
+        80,
+        100
+      ]
+    },
+    {
+      "id": "t11",
+      "level": 0,
+      "style": "main",
+      "rails": false,
+      "from": [
+        76,
+        132
+      ],
+      "to": [
+        76,
+        124
       ]
     }
   ],
@@ -801,164 +623,11 @@ window.DUNGEON_CONFIG = {
       "style": "main"
     },
     {
-      "id": "L3_j_c",
-      "level": 3,
+      "id": "j1",
+      "level": 0,
       "at": [
-        48,
-        89
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_nw",
-      "level": 3,
-      "at": [
-        24,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_ne",
-      "level": 3,
-      "at": [
-        72,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_sw",
-      "level": 3,
-      "at": [
-        24,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_se",
-      "level": 3,
-      "at": [
-        72,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_n",
-      "level": 3,
-      "at": [
-        48,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_s",
-      "level": 3,
-      "at": [
-        48,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_w",
-      "level": 3,
-      "at": [
-        24,
-        89
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L3_j_e",
-      "level": 3,
-      "at": [
-        72,
-        89
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_c",
-      "level": 4,
-      "at": [
-        48,
-        89
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_nw",
-      "level": 4,
-      "at": [
-        24,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_ne",
-      "level": 4,
-      "at": [
-        72,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_sw",
-      "level": 4,
-      "at": [
-        24,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_se",
-      "level": 4,
-      "at": [
-        72,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_n",
-      "level": 4,
-      "at": [
-        48,
-        65
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_s",
-      "level": 4,
-      "at": [
-        48,
-        113
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_w",
-      "level": 4,
-      "at": [
-        24,
-        89
-      ],
-      "style": "main"
-    },
-    {
-      "id": "L4_j_e",
-      "level": 4,
-      "at": [
-        72,
-        89
+        87,
+        117
       ],
       "style": "main"
     }
@@ -991,34 +660,6 @@ window.DUNGEON_CONFIG = {
       ],
       "height": 4,
       "name": "Диспетчерская"
-    },
-    {
-      "id": "L3_r0",
-      "level": 3,
-      "center": [
-        66,
-        86
-      ],
-      "size": [
-        6,
-        6
-      ],
-      "height": 4,
-      "name": "Медпункт"
-    },
-    {
-      "id": "L4_r0",
-      "level": 4,
-      "center": [
-        30,
-        92
-      ],
-      "size": [
-        6,
-        6
-      ],
-      "height": 4,
-      "name": "Склад ГСМ"
     },
     {
       "id": "r0",
@@ -1062,39 +703,6 @@ window.DUNGEON_CONFIG = {
       "label": "Шахта 2 — лестница"
     },
     {
-      "id": "sh_L2_L3",
-      "fromLevel": 2,
-      "toLevel": 3,
-      "at": [
-        48,
-        101
-      ],
-      "withLadder": true,
-      "label": "Шахта 3 — лестница"
-    },
-    {
-      "id": "sh_L2_L3b",
-      "fromLevel": 2,
-      "toLevel": 3,
-      "at": [
-        24,
-        89
-      ],
-      "withLadder": false,
-      "label": "Шахта 3 — ОСТОРОЖНО"
-    },
-    {
-      "id": "sh_L3_L4",
-      "fromLevel": 3,
-      "toLevel": 4,
-      "at": [
-        48,
-        71
-      ],
-      "withLadder": true,
-      "label": "Шахта 4 — лестница"
-    },
-    {
       "id": "sh0",
       "fromLevel": 0,
       "toLevel": 1,
@@ -1104,6 +712,17 @@ window.DUNGEON_CONFIG = {
       ],
       "withLadder": true,
       "label": "Новая шахта"
+    },
+    {
+      "id": "sh1",
+      "fromLevel": 1,
+      "toLevel": 2,
+      "at": [
+        24,
+        89
+      ],
+      "withLadder": false,
+      "label": "Восстающий"
     }
   ],
   "oreSources": [
@@ -1112,7 +731,7 @@ window.DUNGEON_CONFIG = {
       "level": 1,
       "at": [
         66,
-        82
+        84
       ],
       "radius": 1.5,
       "strength": 1700
@@ -1121,8 +740,8 @@ window.DUNGEON_CONFIG = {
       "id": "o_L1b",
       "level": 1,
       "at": [
-        51,
-        67
+        52,
+        65
       ],
       "radius": 1.5,
       "strength": 1550
@@ -1131,8 +750,8 @@ window.DUNGEON_CONFIG = {
       "id": "o_L2a",
       "level": 2,
       "at": [
-        30,
-        96
+        32,
+        94
       ],
       "radius": 1.5,
       "strength": 1750
@@ -1141,58 +760,18 @@ window.DUNGEON_CONFIG = {
       "id": "o_L2b",
       "level": 2,
       "at": [
-        74,
-        115
+        72,
+        113
       ],
       "radius": 1.5,
       "strength": 1600
-    },
-    {
-      "id": "o_L3a",
-      "level": 3,
-      "at": [
-        66,
-        82
-      ],
-      "radius": 1.5,
-      "strength": 1800
-    },
-    {
-      "id": "o_L3b",
-      "level": 3,
-      "at": [
-        26,
-        115
-      ],
-      "radius": 1.5,
-      "strength": 1650
-    },
-    {
-      "id": "o_L4a",
-      "level": 4,
-      "at": [
-        30,
-        96
-      ],
-      "radius": 1.5,
-      "strength": 1900
-    },
-    {
-      "id": "o_L4b",
-      "level": 4,
-      "at": [
-        50,
-        93
-      ],
-      "radius": 1.5,
-      "strength": 1750
     },
     {
       "id": "o0",
       "level": 0,
       "at": [
         73,
-        97
+        96
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1202,7 +781,7 @@ window.DUNGEON_CONFIG = {
       "level": 0,
       "at": [
         96,
-        20
+        19
       ],
       "radius": 1.5,
       "strength": 1600
@@ -1221,7 +800,7 @@ window.DUNGEON_CONFIG = {
       "id": "o3",
       "level": 0,
       "at": [
-        36,
+        37,
         85
       ],
       "radius": 1.5,
@@ -1247,26 +826,6 @@ window.DUNGEON_CONFIG = {
         101.5
       ],
       "yaw": 1.5708,
-      "ore": true
-    },
-    {
-      "id": "c_L3",
-      "level": 3,
-      "at": [
-        48.5,
-        71.5
-      ],
-      "yaw": 1.5708,
-      "ore": false
-    },
-    {
-      "id": "c_L4",
-      "level": 4,
-      "at": [
-        72.5,
-        89.5
-      ],
-      "yaw": 0,
       "ore": true
     },
     {
@@ -1348,6 +907,36 @@ window.DUNGEON_CONFIG = {
       ],
       "yaw": 0,
       "ore": false
+    },
+    {
+      "id": "c8",
+      "level": 0,
+      "at": [
+        80.5,
+        100.5
+      ],
+      "yaw": 0,
+      "ore": false
+    }
+  ],
+  "signs": [
+    {
+      "id": "sg0",
+      "level": 0,
+      "at": [
+        87,
+        116
+      ],
+      "height": 2,
+      "text": "Штольня 31",
+      "face": [
+        0,
+        0
+      ],
+      "bgColor": "#2a2c25",
+      "borderColor": "#ffab1a",
+      "textColor": "#ece8ce",
+      "size": 1.5
     }
   ]
 };
