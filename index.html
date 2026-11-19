@@ -159,10 +159,13 @@
             h += 350 * Math.exp(-(x*x + z*z) / (2 * 1600 * 1600));
 
             const peaks = [
-                { x: 0,     z: 0,   height: 1150, radius: 450 },
-                { x: -1250, z: 200, height: 800,  radius: 380 },
-                { x: 1200,  z: 100, height: 700,  radius: 380 }
+                { x: 0,     z: 0,   height: 1150, radius: 450 }, // Главная (Бештау)
+                { x: -1250, z: 200, height: 800,  radius: 380 }, // Малый Тау
+                { x: 1200,  z: 100, height: 700,  radius: 380 }, // Лисий нос
+                // { x: -200,  z: -400, height: 800, radius: 220 }, // Козьи скалы
+                // Добавьте остальные вершины, чтобы сделать гору многоглавой
             ];
+            
             peaks.forEach(p => {
                 const d = Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z));
                 h += p.height * Math.exp(-(d * d) / (2 * p.radius * p.radius));
