@@ -189,7 +189,7 @@
             <input type="file" id="file-heightmap-png" accept="image/png,image/jpeg">
             <label class="load-label" for="file-heightmap-js">📂 Загрузить heightmap_data.js</label>
             <input type="file" id="file-heightmap-js" accept=".js">
-            <label class="load-label" for="file-objects-js">📂 Загрузить map_objects.js</label>
+            <label class="load-label" for="file-objects-js">📂 Загрузить map_objects.js / forest_data.js</label>
             <input type="file" id="file-objects-js" accept=".js">
         </div>
 
@@ -198,6 +198,7 @@
             <div class="tool-group">
                 <button onclick="exportHeightmapJS()" style="background:#2d5016; border-color:#4a7a24;">💾 Рельеф</button>
                 <button onclick="exportObjectsJS()" style="background:#2d5016; border-color:#4a7a24;">💾 Объекты</button>
+                <button onclick="exportForestJS()" style="background:#1a4028; border-color:#2a6040;">🌲 Лес</button>
             </div>
             <button onclick="clearAll()" style="width:100%; margin-top:10px;">Очистить всё</button>
             <div id="status"></div>
@@ -238,17 +239,141 @@
         let panStartX, panStartY, panStartPanX, panStartPanY;
         let isSpacePressed = false;
 
-        // Сетка для прореживания деревьев (шаг ~4 пикселя)
-        const TREE_SPACING = 4;
-        const treeGrid = new Map();
-        function treeKey(x, y) {
-            return `${Math.floor(x / TREE_SPACING)},${Math.floor(y / TREE_SPACING)}`;
+        // === ЛЕС: маска занятости с шагом 2.5 px ===
+        // В map_objects.js деревья больше не пишутся: хранится только маска,
+        // сами деревья генерируются в index.html по этой маске.
+        const FOREST_CELL = 2.5;
+        const FOREST_COLS = Math.ceil(SIZE / FOREST_CELL);
+        const FOREST_ROWS = Math.ceil(SIZE / FOREST_CELL);
+        let forestMask = new Uint8Array(FOREST_COLS * FOREST_ROWS);
+        let forestSeed = 31337;
+
+        // Кэш отрисовки леса: перерисовывается только при правке маски, не на mousemove
+        const forestCanvas = document.createElement('canvas');
+        forestCanvas.width = SIZE;
+        forestCanvas.height = SIZE;
+        const ctxForest = forestCanvas.getContext('2d');
+
+        function forestCellIndex(cx, cy) {
+            return cy * FOREST_COLS + cx;
         }
-        function rebuildTreeGrid() {
-            treeGrid.clear();
-            for (const obj of mapObjects) {
-                if (obj.type === 'tree') treeGrid.set(treeKey(obj.x, obj.y), true);
+
+        function forestCellOf(x, y) {
+            const cx = Math.floor(x / FOREST_CELL);
+            const cy = Math.floor(y / FOREST_CELL);
+            if (cx < 0 || cy < 0 || cx >= FOREST_COLS || cy >= FOREST_ROWS) return -1;
+            return forestCellIndex(cx, cy);
+        }
+
+        function forestCount() {
+            let n = 0;
+            for (let i = 0; i < forestMask.length; i++) n += forestMask[i];
+            return n;
+        }
+
+        function drawForestCell(cx, cy) {
+            ctxForest.fillRect(cx * FOREST_CELL, cy * FOREST_CELL, FOREST_CELL, FOREST_CELL);
+        }
+
+        function rebuildForestLayer() {
+            ctxForest.clearRect(0, 0, SIZE, SIZE);
+            ctxForest.fillStyle = '#2E4A21';
+            for (let cy = 0; cy < FOREST_ROWS; cy++) {
+                for (let cx = 0; cx < FOREST_COLS; cx++) {
+                    if (forestMask[forestCellIndex(cx, cy)]) drawForestCell(cx, cy);
+                }
             }
+        }
+
+        function redrawForestRegion(gx0, gy0, gx1, gy1) {
+            gx0 = Math.max(0, gx0); gy0 = Math.max(0, gy0);
+            gx1 = Math.min(FOREST_COLS - 1, gx1); gy1 = Math.min(FOREST_ROWS - 1, gy1);
+            if (gx1 < gx0 || gy1 < gy0) return;
+            ctxForest.clearRect(gx0 * FOREST_CELL, gy0 * FOREST_CELL,
+                (gx1 - gx0 + 1) * FOREST_CELL, (gy1 - gy0 + 1) * FOREST_CELL);
+            ctxForest.fillStyle = '#2E4A21';
+            for (let gy = gy0; gy <= gy1; gy++) {
+                for (let gx = gx0; gx <= gx1; gx++) {
+                    if (forestMask[forestCellIndex(gx, gy)]) drawForestCell(gx, gy);
+                }
+            }
+        }
+
+        function setForestCell(x, y) {
+            const idx = forestCellOf(x, y);
+            if (idx < 0 || forestMask[idx]) return;
+            forestMask[idx] = 1;
+            ctxForest.fillStyle = '#2E4A21';
+            drawForestCell(Math.floor(x / FOREST_CELL), Math.floor(y / FOREST_CELL));
+        }
+
+        function clearForestCircle(cx, cy, r) {
+            const gx0 = Math.floor((cx - r) / FOREST_CELL);
+            const gx1 = Math.floor((cx + r) / FOREST_CELL);
+            const gy0 = Math.floor((cy - r) / FOREST_CELL);
+            const gy1 = Math.floor((cy + r) / FOREST_CELL);
+            for (let gy = gy0; gy <= gy1; gy++) {
+                for (let gx = gx0; gx <= gx1; gx++) {
+                    if (gx < 0 || gy < 0 || gx >= FOREST_COLS || gy >= FOREST_ROWS) continue;
+                    const px = (gx + 0.5) * FOREST_CELL;
+                    const py = (gy + 0.5) * FOREST_CELL;
+                    if (Math.hypot(px - cx, py - cy) <= r) forestMask[forestCellIndex(gx, gy)] = 0;
+                }
+            }
+            redrawForestRegion(gx0, gy0, gx1, gy1);
+        }
+
+        function clearNearestForestCell(x, y, radius) {
+            const gx0 = Math.floor((x - radius) / FOREST_CELL);
+            const gx1 = Math.floor((x + radius) / FOREST_CELL);
+            const gy0 = Math.floor((y - radius) / FOREST_CELL);
+            const gy1 = Math.floor((y + radius) / FOREST_CELL);
+            let best = -1, bestDist = radius, bx = 0, by = 0;
+            for (let gy = gy0; gy <= gy1; gy++) {
+                for (let gx = gx0; gx <= gx1; gx++) {
+                    if (gx < 0 || gy < 0 || gx >= FOREST_COLS || gy >= FOREST_ROWS) continue;
+                    const idx = forestCellIndex(gx, gy);
+                    if (!forestMask[idx]) continue;
+                    const d = Math.hypot((gx + 0.5) * FOREST_CELL - x, (gy + 0.5) * FOREST_CELL - y);
+                    if (d < bestDist) { bestDist = d; best = idx; bx = gx; by = gy; }
+                }
+            }
+            if (best >= 0) {
+                forestMask[best] = 0;
+                redrawForestRegion(bx, by, bx, by);
+            }
+        }
+
+        function packForestMask() {
+            const bytes = new Uint8Array(Math.ceil(forestMask.length / 8));
+            for (let i = 0; i < forestMask.length; i++) {
+                if (forestMask[i]) bytes[i >> 3] |= 1 << (i & 7);
+            }
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+
+        function unpackForestMask(b64, cols, rows) {
+            const bin = atob(b64);
+            const mask = new Uint8Array(cols * rows);
+            for (let i = 0; i < mask.length; i++) {
+                mask[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1;
+            }
+            return mask;
+        }
+
+        // Переносит маску произвольного размера в сетку редактора (ближайший сосед)
+        function importForestMask(srcMask, srcCols, srcRows) {
+            forestMask = new Uint8Array(FOREST_COLS * FOREST_ROWS);
+            for (let cy = 0; cy < FOREST_ROWS; cy++) {
+                const sy = Math.min(srcRows - 1, Math.floor((cy + 0.5) / FOREST_ROWS * srcRows));
+                for (let cx = 0; cx < FOREST_COLS; cx++) {
+                    const sx = Math.min(srcCols - 1, Math.floor((cx + 0.5) / FOREST_COLS * srcCols));
+                    if (srcMask[sy * srcCols + sx]) forestMask[forestCellIndex(cx, cy)] = 1;
+                }
+            }
+            rebuildForestLayer();
         }
 
         ctxBase.fillStyle = '#000000';
@@ -870,13 +995,6 @@
         }
 
         // === ЛЕС (кисть) ===
-        // Уменьшаем размер ячейки проверки коллизий, чтобы деревья могли стоять ближе
-        const MIN_TREE_DIST = 2.5; 
-
-        function treeKey(x, y) {
-            return `${Math.floor(x / MIN_TREE_DIST)},${Math.floor(y / MIN_TREE_DIST)}`;
-        }
-
         function paintForest(cx, cy) {
             // Считаем площадь кисти и количество попыток посадки
             const area = Math.PI * brushSize * brushSize;
@@ -884,7 +1002,7 @@
             const attempts = Math.floor(area * 0.15 * forestDensity);
 
             for (let i = 0; i < attempts; i++) {
-                // Равномерное случайное распределение внутри круга (без сетки!)
+                // Равномерное случайное распределение внутри круга
                 const angle = Math.random() * Math.PI * 2;
                 // Используем корень или степень (0.6 - 0.8), чтобы к краям лес редел естественнее
                 const radius = brushSize * Math.pow(Math.random(), 0.65);
@@ -892,25 +1010,19 @@
                 const jx = cx + Math.cos(angle) * radius;
                 const jy = cy + Math.sin(angle) * radius;
 
-                if (jx < 0 || jx >= SIZE || jy < 0 || jy >= SIZE) continue;
-
-                const key = treeKey(jx, jy);
-                if (treeGrid.has(key)) continue;
-
-                treeGrid.set(key, true);
-                mapObjects.push({
-                    type: 'tree',
-                    x: jx, // Убрали Math.round! Дробные координаты полностью ломают сетку
-                    y: jy,
-                    angle: Math.random() * Math.PI * 2,
-                    scale: 0.65 + Math.random() * 0.7 // Разный размер деревьев (если поддерживается рендером)
-                });
+                setForestCell(jx, jy);
             }
         }
 
         // === ОБЪЕКТЫ ===
         function placeObject(type, x, y) {
-            const angle = (type === 'tree' || type === 'ruin') ? Math.random() * Math.PI * 2 : 0;
+            // Дерево = одна ячейка маски леса
+            if (type === 'tree') {
+                setForestCell(x, y);
+                drawOverlay();
+                return;
+            }
+            const angle = type === 'ruin' ? Math.random() * Math.PI * 2 : 0;
             const aditAngle = type === 'adit' ? Math.random() * Math.PI * 2 : 0;
             const obj = { type, x, y, angle, aditAngle };
             if (type === 'adit') {
@@ -918,7 +1030,6 @@
                 obj.url = getNewAditUrl();
             }
             mapObjects.push(obj);
-            if (type === 'tree') treeGrid.set(treeKey(x, y), true);
             if (type === 'adit') updateAditUI();
             drawOverlay();
         }
@@ -930,26 +1041,18 @@
                 if (obj.type === 'road') {
                     return !obj.points.some(p => Math.hypot(p.x - cx, p.y - cy) < Math.max(brushSize, 15));
                 }
-                // Деревья стираются радиусом кисти, остальные — точным кликом
-                const r = obj.type === 'tree' ? brushSize : 15;
-                const keep = Math.hypot(obj.x - cx, obj.y - cy) > r;
+                // Одиночные объекты стираются точным кликом, лес — кистью ниже
+                const keep = Math.hypot(obj.x - cx, obj.y - cy) > 15;
                 if (!keep && obj.type === 'adit') aditRemoved = true;
                 return keep;
             });
-            if (mapObjects.length !== before) {
-                rebuildTreeGrid();
-                if (aditRemoved) updateAditUI();
-            }
+            clearForestCircle(cx, cy, brushSize);
+            if (mapObjects.length !== before && aditRemoved) updateAditUI();
         }
 
-        // Ластик леса: стирает ТОЛЬКО деревья в радиусе кисти
+        // Ластик леса: стирает только ячейки маски в радиусе кисти
         function eraseForestAt(cx, cy) {
-            const before = mapObjects.length;
-            mapObjects = mapObjects.filter(obj => {
-                if (obj.type !== 'tree') return true;
-                return Math.hypot(obj.x - cx, obj.y - cy) > brushSize;
-            });
-            if (mapObjects.length !== before) rebuildTreeGrid();
+            clearForestCircle(cx, cy, brushSize);
         }
 
         // Удаление одного ближайшего объекта (дерево/штольня/руины) в радиусе 20 px
@@ -959,7 +1062,7 @@
             let closestDist = RADIUS;
             for (let i = 0; i < mapObjects.length; i++) {
                 const obj = mapObjects[i];
-                if (obj.type !== 'tree' && obj.type !== 'adit' && obj.type !== 'ruin') continue;
+                if (obj.type !== 'adit' && obj.type !== 'ruin') continue;
                 const d = Math.hypot(obj.x - x, obj.y - y);
                 if (d < closestDist) {
                     closestDist = d;
@@ -968,8 +1071,10 @@
             }
             if (closestIdx >= 0) {
                 const removed = mapObjects.splice(closestIdx, 1)[0];
-                if (removed.type === 'tree') rebuildTreeGrid();
                 if (removed.type === 'adit') updateAditUI();
+            } else {
+                // ближайшая занятая ячейка леса
+                clearNearestForestCell(x, y, RADIUS);
             }
         }
 
@@ -989,13 +1094,8 @@
                 ctxOverlay.stroke();
             }
 
-            // 2. Все деревья (быстрый рендер через fillRect)
-            ctxOverlay.fillStyle = '#2E4A21';
-            for (const obj of mapObjects) {
-                if (obj.type === 'tree') {
-                    ctxOverlay.fillRect(obj.x - 1.5, obj.y - 1.5, 3, 3);
-                }
-            }
+            // 2. Лес — один блит из кэша (не перерисовываем 29 тыс. точек на mousemove)
+            ctxOverlay.drawImage(forestCanvas, 0, 0);
 
             // 3. Прочие объекты
             for (const obj of mapObjects) {
@@ -1140,41 +1240,69 @@
             const file = e.target.files[0];
             if (!file) return;
             readJSFile(file, (sandbox) => {
-                if (!sandbox.MAP_OBJECTS || !Array.isArray(sandbox.MAP_OBJECTS.objects)) {
-                    setStatus("❌ Нет MAP_OBJECTS", true); return;
+                if (!sandbox.MAP_OBJECTS && !sandbox.FOREST_DATA) {
+                    setStatus("❌ Нет MAP_OBJECTS / FOREST_DATA", true); return;
                 }
+
                 const data = sandbox.MAP_OBJECTS;
-                const ms = data.mapSize || SIZE;
-                const scale = SIZE / ms;
+                if (data) {
+                    if (!Array.isArray(data.objects)) { setStatus("❌ Нет MAP_OBJECTS.objects", true); return; }
+                    const ms = data.mapSize || SIZE;
+                    const scale = SIZE / ms;
 
-                if (data.geo) setGeoInputs(data.geo);
+                    if (data.geo) setGeoInputs(data.geo);
 
-                mapObjects = data.objects.map(obj => {
-                    if (obj.type === 'road')
-                        return { ...obj, points: obj.points.map(p => ({ x: p.x * scale, y: p.y * scale })) };
-                    return { ...obj, x: obj.x * scale, y: obj.y * scale };
-                });
+                    mapObjects = data.objects
+                        .filter(obj => obj.type !== 'tree')
+                        .map(obj => {
+                            if (obj.type === 'road')
+                                return { ...obj, points: obj.points.map(p => ({ x: p.x * scale, y: p.y * scale })) };
+                            return { ...obj, x: obj.x * scale, y: obj.y * scale };
+                        });
 
-                if (data.playerStart) {
-                    playerStart = {
-                        x: data.playerStart.x * scale,
-                        y: data.playerStart.y * scale,
-                        angle: data.playerStart.angle
-                    };
-                } else {
-                    playerStart = null;
+                    if (data.playerStart) {
+                        playerStart = {
+                            x: data.playerStart.x * scale,
+                            y: data.playerStart.y * scale,
+                            angle: data.playerStart.angle
+                        };
+                    } else {
+                        playerStart = null;
+                    }
+                    updateStartUI();
+
+                    if (data.worldSettings && !sandbox.HEIGHTMAP_SETTINGS) applyWorldSettings(data.worldSettings);
+
+                    // Совместимость: старые карты хранили каждое дерево точкой
+                    const legacyTrees = data.objects.filter(o => o.type === 'tree');
+                    if (legacyTrees.length) {
+                        forestMask = new Uint8Array(FOREST_COLS * FOREST_ROWS);
+                        for (const t of legacyTrees) {
+                            const idx = forestCellOf(t.x * scale, t.y * scale);
+                            if (idx >= 0) forestMask[idx] = 1;
+                        }
+                        rebuildForestLayer();
+                    }
                 }
-                updateStartUI();
 
-                if (data.worldSettings && !sandbox.HEIGHTMAP_SETTINGS) applyWorldSettings(data.worldSettings);
+                if (sandbox.FOREST_DATA && typeof sandbox.FOREST_DATA.cells === 'string') {
+                    const fd = sandbox.FOREST_DATA;
+                    const cell = fd.cell || FOREST_CELL;
+                    const cols = fd.cols || Math.ceil((fd.mapSize || SIZE) / cell);
+                    const rows = fd.rows || cols;
+                    if (typeof fd.density === 'number') {
+                        forestDensity = fd.density;
+                        document.getElementById('forest-density').value = forestDensity;
+                        document.getElementById('val-forest-density').innerText = forestDensity.toFixed(2);
+                    }
+                    if (typeof fd.seed === 'number') forestSeed = fd.seed;
+                    importForestMask(unpackForestMask(fd.cells, cols, rows), cols, rows);
+                }
 
                 currentRoadPoints = [];
-                rebuildTreeGrid();
                 updateAditUI();
                 drawOverlay();
-
-                const treeCount = mapObjects.filter(o => o.type === 'tree').length;
-                setStatus(`✅ Загружено ${mapObjects.length} объектов (${treeCount} деревьев)`);
+                setStatus(`✅ Загружено ${mapObjects.length} объектов, ${forestCount()} ячеек леса`);
                 updateSettingsInfo();
             });
             e.target.value = '';
@@ -1217,8 +1345,25 @@ window.HEIGHTMAP_SETTINGS = ${JSON.stringify(s, null, 4)};
 window.MAP_OBJECTS = ${JSON.stringify(data, null, 2)};
 `;
             downloadFile(content, 'map_objects.js', 'application/javascript');
-            const treeCount = mapObjects.filter(o => o.type === 'tree').length;
-            setStatus(`✅ ${mapObjects.length} объектов (${treeCount} деревьев)${playerStart ? ' + старт' : ''}`);
+            setStatus(`✅ ${mapObjects.length} объектов (лес — отдельный файл)${playerStart ? ' + старт' : ''}`);
+        }
+
+        function exportForestJS() {
+            const content =
+`// Автоматически сгенерировано редактором карт (маска леса).
+window.FOREST_DATA = {
+  "mapSize": ${SIZE},
+  "cell": ${FOREST_CELL},
+  "cols": ${FOREST_COLS},
+  "rows": ${FOREST_ROWS},
+  "density": ${forestDensity},
+  "seed": ${forestSeed},
+  "count": ${forestCount()},
+  "cells": "${packForestMask()}"
+};
+`;
+            downloadFile(content, 'forest_data.js', 'application/javascript');
+            setStatus(`✅ forest_data.js сохранён (${forestCount()} ячеек)`);
         }
 
         function downloadFile(content, filename, mimeType) {
@@ -1238,7 +1383,8 @@ window.MAP_OBJECTS = ${JSON.stringify(data, null, 2)};
             mapObjects = [];
             currentRoadPoints = [];
             playerStart = null;
-            treeGrid.clear();
+            forestMask = new Uint8Array(FOREST_COLS * FOREST_ROWS);
+            rebuildForestLayer();
             updateStartUI();
             updateAditUI();
             drawOverlay();
