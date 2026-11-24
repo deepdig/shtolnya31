@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Редактор карты: Бештау</title>
+    <style>
+        body { margin: 0; background: #1e1e1e; color: #ddd; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        #toolbar { width: 290px; background: #252526; padding: 15px; display: flex; flex-direction: column; gap: 15px; border-right: 2px solid #333; overflow-y: auto; flex-shrink: 0; }
+        h3 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #888; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .tool-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { background: #3c3c3c; color: white; border: 1px solid #555; padding: 8px; cursor: pointer; border-radius: 4px; font-size: 13px; transition: 0.15s; }
+        button:hover { background: #4c4c4c; }
+        button.active { background: #007acc; border-color: #0098ff; box-shadow: 0 0 8px rgba(0,152,255,0.5); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        label { display: flex; flex-direction: column; font-size: 13px; gap: 5px; }
+        input[type="range"] { width: 100%; }
+        input[type="number"], input[type="text"] { width: 100%; background: #1e1e1e; color: #ddd; border: 1px solid #555; padding: 6px; border-radius: 4px; font-size: 13px; box-sizing: border-box; }
+        input[type="number"]:focus, input[type="text"]:focus { outline: none; border-color: #007acc; }
+        input[type="file"] { display: none; }
+        .load-label { display: block; background: #3c3c3c; border: 1px solid #555; padding: 8px; text-align: center; border-radius: 4px; cursor: pointer; font-size: 13px; margin-bottom: 8px; }
+        .load-label:hover { background: #4c4c4c; }
+        .load-label.png { background: #2a3f5f; border-color: #3d5a80; }
+        .load-label.png:hover { background: #3a5480; }
+        #canvas-container { flex-grow: 1; background: #111; position: relative; overflow: hidden; cursor: grab; }
+        #canvas-container.panning { cursor: grabbing; }
+        #canvas-wrapper { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+        canvas { display: block; position: absolute; top: 0; left: 0; box-shadow: 0 0 20px rgba(0,0,0,0.8); image-rendering: pixelated; }
+        #baseCanvas { z-index: 1; }
+        #overlayCanvas { z-index: 2; cursor: crosshair; }
+        #coords { position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; font-family: monospace; font-size: 12px; pointer-events: none; z-index: 10; }
+        .legend { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 4px; }
+        .color-box { width: 12px; height: 12px; border-radius: 2px; }
+        #status { font-size: 11px; color: #6a9955; text-align: center; min-height: 14px; }
+        #zoom-info { font-size: 11px; color: #aaa; text-align: center; }
+        #settings-info { font-size: 11px; color: #888; text-align: center; margin-top: 8px; line-height: 1.5; background: #1a1a1a; padding: 6px; border-radius: 4px; }
+        .fog-section { background: #16202e; border: 1px solid #2a3f5f; border-radius: 4px; padding: 8px; margin-top: 8px; }
+        .fog-section .fog-title { font-size: 11px; color: #6ba3d9; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+        #start-panel, #forest-panel, #adit-panel { background: #1a2332; border: 1px solid #2a4060; border-radius: 4px; padding: 10px; display: none; margin-top: 8px; }
+        #start-panel.visible, #forest-panel.visible, #adit-panel.visible { display: block; }
+        #start-panel .hint, #forest-panel .hint, #adit-panel .hint { font-size: 11px; color: #6ba3d9; margin-bottom: 8px; line-height: 1.4; }
+        #start-panel label, #forest-panel label, #adit-panel label { margin-bottom: 6px; }
+        #start-panel input, #forest-panel input, #adit-panel input { font-size: 12px; padding: 4px; }
+        #start-panel button { font-size: 12px; padding: 6px; margin-top: 4px; }
+        #forest-panel { background: #152214; border-color: #2a5c27; }
+        #forest-panel .hint { color: #7dc97a; }
+        #adit-panel { background: #2a2230; border-color: #5a3f80; }
+        #adit-panel .hint { color: #c9a8e8; }
+        #adit-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; margin-top: 8px; }
+        .adit-row { display: flex; flex-direction: column; gap: 4px; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; padding: 6px; }
+        .adit-row-title { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; gap: 6px; }
+        .adit-geo-row { display: flex; gap: 4px; align-items: center; }
+        .adit-geo-row span { font-size: 11px; color: #888; width: 22px; flex-shrink: 0; }
+        .adit-geo-row input { font-size: 11px; padding: 4px; }
+        .geo-section { background: #16202e; border: 1px solid #2a3f5f; border-radius: 4px; padding: 8px; }
+        .geo-head, .geo-row { display: grid; grid-template-columns: 26px 1fr 1fr; gap: 4px; align-items: center; font-size: 11px; }
+        .geo-head { color: #6ba3d9; margin-bottom: 3px; }
+        .geo-row { margin-bottom: 4px; }
+        .geo-row span { color: #aaa; }
+        .geo-row input { font-size: 11px; padding: 4px; }
+        .geo-buttons { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; margin-top: 6px; }
+        .geo-buttons button { font-size: 11px; padding: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="toolbar">
+        <div>
+            <h3>Рельеф</h3>
+            <div class="tool-group">
+                <button id="tool-raise" class="active" onclick="setTool('raise')">Поднять</button>
+                <button id="tool-lower" onclick="setTool('lower')">Опустить</button>
+            </div>
+            <label style="margin-top: 10px;">Радиус кисти: <span id="val-size">30</span> px
+                <input type="range" id="brush-size" min="5" max="100" value="30">
+            </label>
+            <label>Скорость: <span id="val-speed">5</span>
+                <input type="range" id="brush-speed" min="1" max="20" value="5">
+            </label>
+        </div>
+
+        <div>
+            <h3>Параметры мира</h3>
+            <label style="margin-bottom: 8px;">Размер мира (км)
+                <input type="number" id="world-size-km" value="9" min="0.5" max="100" step="0.01">
+            </label>
+            <label style="margin-bottom: 8px;">Мин. высота (м)
+                <input type="number" id="min-height-m" value="0" min="0" max="8000" step="10">
+            </label>
+            <label style="margin-bottom: 8px;">Макс. высота (м)
+                <input type="number" id="max-height-m" value="1400" min="0" max="8900" step="10">
+            </label>
+            <div class="fog-section">
+                <div class="fog-title">🌫 Туман</div>
+                <label style="margin-bottom: 6px;">Низ (м)
+                    <input type="number" id="fog-min-m" value="800" min="0" max="8000" step="50">
+                </label>
+                <label style="margin-bottom: 6px;">Верх (м)
+                    <input type="number" id="fog-max-m" value="1600" min="0" max="8000" step="50">
+                </label>
+                <label style="margin-bottom: 0;">Плотность (0–1)
+                    <input type="number" id="fog-density" value="0.75" min="0" max="1" step="0.05">
+                </label>
+            </div>
+            <div id="settings-info"></div>
+        </div>
+
+        <div>
+            <h3>Топопривязка углов</h3>
+            <div class="geo-section">
+                <div class="geo-head"><span></span><span>Lat</span><span>Lng</span></div>
+                <div class="geo-row"><span>СЗ</span><input type="text" id="geo-topLeft-lat" inputmode="decimal"><input type="text" id="geo-topLeft-lng" inputmode="decimal"></div>
+                <div class="geo-row"><span>СВ</span><input type="text" id="geo-topRight-lat" inputmode="decimal"><input type="text" id="geo-topRight-lng" inputmode="decimal"></div>
+                <div class="geo-row"><span>ЮЗ</span><input type="text" id="geo-bottomLeft-lat" inputmode="decimal"><input type="text" id="geo-bottomLeft-lng" inputmode="decimal"></div>
+                <div class="geo-row"><span>ЮВ</span><input type="text" id="geo-bottomRight-lat" inputmode="decimal"><input type="text" id="geo-bottomRight-lng" inputmode="decimal"></div>
+                <div class="geo-buttons">
+                    <button onclick="applyGeoPreset()">📍 Бештау</button>
+                    <button onclick="applyGeoToWorldSize()">⇄ Масштаб</button>
+                    <button onclick="clearGeo()" title="Очистить координаты">✕</button>
+                </div>
+                <div class="hint" style="margin-top:6px; line-height:1.4;">EPSG:4326, десятичные градусы.<br>Штольне можно вписать точные координаты.</div>
+            </div>
+        </div>
+
+        <div>
+            <h3>Объекты</h3>
+            <div class="tool-group">
+                <button id="tool-tree" onclick="setTool('tree')">Дерево</button>
+                <button id="tool-adit" onclick="setTool('adit')">Штольня</button>
+                <button id="tool-ruin" onclick="setTool('ruin')">Руины</button>
+                <button id="tool-road" onclick="setTool('road')">Дорога</button>
+            </div>
+
+            <div style="font-size:11px; color:#888; margin-top:6px; text-align:center; line-height:1.4;">
+                Одиночные объекты:<br>ЛКМ — поставить, ПКМ — удалить
+            </div>
+
+            <div id="adit-panel">
+                <div class="hint">Название ставится на табличку у входа<br>и отображается в игре.<br>Ссылка — файл, который откроется при входе.</div>
+                <label>Название новой: <input type="text" id="adit-label" value="Штольня 31"></label>
+                <label>Ссылка новой: <input type="text" id="adit-url" value="data/shtolnya31.html" list="adit-url-list" placeholder="data/shtolnya31.html"></label>
+                <datalist id="adit-url-list">
+                    <option value="data/shtolnya13.html"></option>
+                    <option value="data/shtolnya27.html"></option>
+                    <option value="data/shtolnya31.html"></option>
+                    <option value="data/shtolnya41.html"></option>
+                </datalist>
+                <div id="adit-list"></div>
+            </div>
+
+            <!-- кисть леса -->
+            <button id="tool-forest" onclick="setTool('forest')" style="width:100%; margin-top:8px; background:#1a4028; border-color:#2a6040;">🌲 Лес (кисть)</button>
+            <div id="forest-panel">
+                <div class="hint">ЛКМ — рисовать лес (drag).<br>ПКМ — стирать только деревья (drag).<br>Радиус — в разделе «Рельеф».</div>
+                <label>Плотность: <span id="val-forest-density">0.60</span>
+                    <input type="range" id="forest-density" min="0.1" max="2" step="0.05" value="0.6">
+                </label>
+            </div>
+            
+            <button id="tool-start" onclick="setTool('start')" style="width:100%; margin-top:8px; background:#1a3a52; border-color:#2a5a80;">▶ Старт игрока</button>
+            
+            <div style="margin-top: 10px;">
+                <div class="legend"><div class="color-box" style="background:#013220;"></div> Лес</div>
+                <div class="legend"><div class="color-box" style="background:#ffd700;"></div> Штольня</div>
+                <div class="legend"><div class="color-box" style="background:#888888;"></div> Руины</div>
+                <div class="legend"><div class="color-box" style="background:#666666;"></div> Дорога</div>
+                <div class="legend"><div class="color-box" style="background:#00BFFF;"></div> Старт</div>
+            </div>
+            <button id="tool-erase" onclick="setTool('erase')" style="width:100%; margin-top:10px; background:#5a1a1a; border-color:#8a2a2a;">Удалить (кисть)</button>
+            
+            <div id="start-panel">
+                <div class="hint">Клик = точка + направление.<br>Клик по маркеру = вращение.</div>
+                <label>X: <input type="number" id="start-x" step="1"></label>
+                <label>Y: <input type="number" id="start-y" step="1"></label>
+                <label>Угол (°): <input type="number" id="start-angle" step="1"></label>
+                <button id="start-remove" onclick="removePlayerStart()">🗑 Удалить старт</button>
+            </div>
+        </div>
+
+        <div>
+            <h3>Вид</h3>
+            <button onclick="centerView()" style="width:100%;">🔍 Сбросить вид (Центр)</button>
+            <div id="zoom-info" style="margin-top:8px;">Масштаб: 100%</div>
+            <div style="font-size:11px; color:#777; margin-top:4px; text-align:center;">Колесо — зум<br>Средняя / Пробел+ЛКМ — панорама</div>
+        </div>
+
+        <div>
+            <h3>Загрузить (для правки)</h3>
+            <label class="load-label png" for="file-heightmap-png">🖼️ Загрузить heightmap.png</label>
+            <input type="file" id="file-heightmap-png" accept="image/png,image/jpeg">
+            <label class="load-label" for="file-heightmap-js">📂 Загрузить heightmap_data.js</label>
+            <input type="file" id="file-heightmap-js" accept=".js">
+            <label class="load-label" for="file-objects-js">📂 Загрузить map_objects.js</label>
+            <input type="file" id="file-objects-js" accept=".js">
+        </div>
+
+        <div>
+            <h3>Сохранить</h3>
+            <div class="tool-group">
+                <button onclick="exportHeightmapJS()" style="background:#2d5016; border-color:#4a7a24;">💾 Рельеф</button>
+                <button onclick="exportObjectsJS()" style="background:#2d5016; border-color:#4a7a24;">💾 Объекты</button>
+            </div>
+            <button onclick="clearAll()" style="width:100%; margin-top:10px;">Очистить всё</button>
+            <div id="status"></div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <div id="canvas-wrapper">
+            <canvas id="baseCanvas" width="512" height="512"></canvas>
+            <canvas id="overlayCanvas" width="512" height="512"></canvas>
+        </div>
+    </div>
+    
+    <div id="coords">X: 0, Y: 0</div>
+
+    <script>
+        const SIZE = 512;
+        const container = document.getElementById('canvas-container');
+        const wrapper = document.getElementById('canvas-wrapper');
+        const baseCanvas = document.getElementById('baseCanvas');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const ctxBase = baseCanvas.getContext('2d', { willReadFrequently: true });
+        const ctxOverlay = overlayCanvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const zoomInfoEl = document.getElementById('zoom-info');
+
+        let currentTool = 'raise';
+        let brushSize = 30, brushSpeed = 5;
+        let forestDensity = 0.6;
+        let isMouseDown = false, mouseX = 0, mouseY = 0;
+        let isRightDrag = false; 
+        let mapObjects = [];
+        let currentRoadPoints = [];
+        let playerStart = null;
+        let isRotatingStart = false;
+        let zoom = 1, panX = 0, panY = 0;
+        let isPanning = false;
+        let panStartX, panStartY, panStartPanX, panStartPanY;
+        let isSpacePressed = false;
+
+        // Сетка для прореживания деревьев (шаг ~4 пикселя)
+        const TREE_SPACING = 4;
+        const treeGrid = new Map();
+        function treeKey(x, y) {
+            return `${Math.floor(x / TREE_SPACING)},${Math.floor(y / TREE_SPACING)}`;
+        }
+        function rebuildTreeGrid() {
+            treeGrid.clear();
+            for (const obj of mapObjects) {
+                if (obj.type === 'tree') treeGrid.set(treeKey(obj.x, obj.y), true);
+            }
+        }
+
+        ctxBase.fillStyle = '#000000';
+        ctxBase.fillRect(0, 0, SIZE, SIZE);
+
+        // === УТИЛИТЫ ===
+        function setStatus(msg, isError = false) {
+            statusEl.innerText = msg;
+            statusEl.style.color = isError ? '#f48771' : '#6a9955';
+            setTimeout(() => { statusEl.innerText = ''; }, 4000);
+        }
+
+        function applyTransform() {
+            wrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+            zoomInfoEl.innerText = `Масштаб: ${Math.round(zoom * 100)}%`;
+        }
+
+        function centerView() {
+            zoom = 1;
+            panX = (container.clientWidth - SIZE * zoom) / 2;
+            panY = (container.clientHeight - SIZE * zoom) / 2;
+            applyTransform();
+        }
+
+        function readJSFile(file, callback) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const sandbox = {};
+                try {
+                    new Function('window', e.target.result)(sandbox);
+                    callback(sandbox);
+                } catch (err) {
+                    setStatus("Ошибка парсинга: " + err.message, true);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // === ТОПОПРИВЯЗКА (EPSG:4326) ===
+        const GEO_CORNERS = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
+        const GEO_PRESET = {
+            topLeft:     [44.12894170789082, 42.98353135585785],
+            bottomLeft:  [44.06630802532157, 42.98353135585785],
+            bottomRight: [44.06630802532157, 43.070746064186096],
+            topRight:    [44.12894170789082, 43.070746064186096]
+        };
+        const EARTH_RADIUS_M = 6371008.8;
+
+        function geoInput(corner, part) {
+            return document.getElementById(`geo-${corner}-${part}`);
+        }
+
+        // Читаем 4 угла. null, если хотя бы один не задан/невалиден
+        function readGeoLatLng() {
+            const res = {};
+            for (const corner of GEO_CORNERS) {
+                const lat = parseFloat(geoInput(corner, 'lat').value);
+                const lng = parseFloat(geoInput(corner, 'lng').value);
+                if (!isFinite(lat) || !isFinite(lng)) return null;
+                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+                res[corner] = [lat, lng];
+            }
+            return res;
+        }
+
+        function setGeoInputs(geo) {
+            for (const corner of GEO_CORNERS) {
+                const c = geo && geo[corner];
+                geoInput(corner, 'lat').value = c ? c[0] : '';
+                geoInput(corner, 'lng').value = c ? c[1] : '';
+            }
+        }
+
+        function haversineM(lat1, lng1, lat2, lng2) {
+            const toRad = Math.PI / 180;
+            const dLat = (lat2 - lat1) * toRad;
+            const dLng = (lng2 - lng1) * toRad;
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
+            return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
+        }
+
+        // Билинейная модель «пиксель ↔ lat/lng» по 4 углам.
+        // u = x / SIZE (0 — запад, 1 — восток), v = y / SIZE (0 — север, 1 — юг)
+        function getGeoModel() {
+            const g = readGeoLatLng();
+            if (!g) return null;
+            const tl = g.topLeft, tr = g.topRight, bl = g.bottomLeft, br = g.bottomRight;
+            const widthM  = (haversineM(bl[0], bl[1], br[0], br[1]) + haversineM(tl[0], tl[1], tr[0], tr[1])) / 2;
+            const heightM = (haversineM(tl[0], tl[1], bl[0], bl[1]) + haversineM(tr[0], tr[1], br[0], br[1])) / 2;
+            if (!(widthM > 0) || !(heightM > 0)) return null;
+            return {
+                corners: g,
+                widthM, heightM,
+                pixelXM: widthM / SIZE,
+                pixelYM: heightM / SIZE,
+                lat: { a: tl[0], b: tr[0] - tl[0], c: bl[0] - tl[0], d: tl[0] - tr[0] - bl[0] + br[0] },
+                lng: { a: tl[1], b: tr[1] - tl[1], c: bl[1] - tl[1], d: tl[1] - tr[1] - bl[1] + br[1] },
+                latTop: (tl[0] + tr[0]) / 2, latBottom: (bl[0] + br[0]) / 2,
+                lngLeft: (tl[1] + bl[1]) / 2, lngRight: (tr[1] + br[1]) / 2
+            };
+        }
+
+        function geoBilinear(coef, u, v) {
+            return coef.a + coef.b * u + coef.c * v + coef.d * u * v;
+        }
+
+        function pxToLatLng(x, y) {
+            const m = getGeoModel();
+            if (!m) return null;
+            const u = x / SIZE, v = y / SIZE;
+            return { lat: geoBilinear(m.lat, u, v), lng: geoBilinear(m.lng, u, v) };
+        }
+
+        function latLngToPx(lat, lng) {
+            const m = getGeoModel();
+            if (!m || !isFinite(lat) || !isFinite(lng)) return null;
+            let u = (lng - m.lngLeft) / (m.lngRight - m.lngLeft);
+            let v = (lat - m.latTop) / (m.latBottom - m.latTop);
+            if (!isFinite(u)) u = 0.5;
+            if (!isFinite(v)) v = 0.5;
+            // Метод Ньютона: обращение билинейной модели
+            for (let i = 0; i < 12; i++) {
+                const dLng = geoBilinear(m.lng, u, v) - lng;
+                const dLat = geoBilinear(m.lat, u, v) - lat;
+                if (Math.abs(dLng) < 1e-12 && Math.abs(dLat) < 1e-12) break;
+                const j11 = m.lng.b + m.lng.d * v, j12 = m.lng.c + m.lng.d * u;
+                const j21 = m.lat.b + m.lat.d * v, j22 = m.lat.c + m.lat.d * u;
+                const det = j11 * j22 - j12 * j21;
+                if (Math.abs(det) < 1e-18) break;
+                u -= (dLng * j22 - dLat * j12) / det;
+                v -= (-dLng * j21 + dLat * j11) / det;
+            }
+            return { x: u * SIZE, y: v * SIZE };
+        }
+
+        function geoSizeKm(m) {
+            return Math.round(((m.widthM + m.heightM) / 2 / 1000) * 100) / 100;
+        }
+
+        function applyGeoToWorldSize(silent) {
+            const m = getGeoModel();
+            if (!m) { if (!silent) setStatus('❌ Заполните все 4 угла координатами', true); return; }
+            const km = geoSizeKm(m);
+            document.getElementById('world-size-km').value = km;
+            updateSettingsInfo();
+            updateAditUI();
+            drawOverlay();
+            if (!silent) setStatus(`✅ Масштаб из координат: ${km} км`);
+        }
+
+        function applyGeoPreset() {
+            setGeoInputs(GEO_PRESET);
+            applyGeoToWorldSize();
+        }
+
+        function clearGeo() {
+            setGeoInputs(null);
+            updateSettingsInfo();
+            updateAditUI();
+            setStatus('Координаты очищены');
+        }
+
+        GEO_CORNERS.forEach(corner => {
+            ['lat', 'lng'].forEach(part => {
+                geoInput(corner, part).addEventListener('input', () => {
+                    updateSettingsInfo();
+                    updateAditUI();
+                });
+            });
+        });
+
+        // === ПАРАМЕТРЫ МИРА ===
+        function getWorldSettings() {
+            return {
+                worldSizeKm: parseFloat(document.getElementById('world-size-km').value) || 9,
+                minHeightM:  parseFloat(document.getElementById('min-height-m').value) || 500,
+                maxHeightM:  parseFloat(document.getElementById('max-height-m').value) || 1400,
+                fogMinM:     parseFloat(document.getElementById('fog-min-m').value) || 800,
+                fogMaxM:     parseFloat(document.getElementById('fog-max-m').value) || 1600,
+                fogDensity:  parseFloat(document.getElementById('fog-density').value) || 0.75,
+                geo:         readGeoLatLng()
+            };
+        }
+
+        function applyWorldSettings(s) {
+            if (!s) return;
+            const fields = {
+                'world-size-km': s.worldSizeKm,
+                'min-height-m':  s.minHeightM,
+                'max-height-m':  s.maxHeightM,
+                'fog-min-m':     s.fogMinM,
+                'fog-max-m':     s.fogMaxM,
+                'fog-density':   s.fogDensity
+            };
+            Object.keys(fields).forEach(id => {
+                if (isFinite(fields[id])) document.getElementById(id).value = fields[id];
+            });
+            if (s.geo) setGeoInputs(s.geo);
+            updateSettingsInfo();
+        }
+
+        function updateSettingsInfo() {
+            const s = getWorldSettings();
+            const info = document.getElementById('settings-info');
+            const geo = getGeoModel();
+
+            let geoHtml = '<span style="color:#6ba3d9;">🌍 Топопривязка не задана</span>';
+            if (geo) {
+                const sizeKm = (geo.widthM + geo.heightM) / 2 / 1000;
+                const mismatch = Math.abs(s.worldSizeKm - sizeKm) / sizeKm > 0.01;
+                const aspect = geo.widthM / geo.heightM;
+                geoHtml =
+                    `🌍 ${(geo.widthM / 1000).toFixed(3)} × ${(geo.heightM / 1000).toFixed(3)} км<br>` +
+                    `🌍 ${geo.pixelXM.toFixed(2)} × ${geo.pixelYM.toFixed(2)} м/пикс<br>` +
+                    (Math.abs(aspect - 1) > 0.02
+                        ? `<span style="color:#f48771;">⚠ Карта не квадратная (${aspect.toFixed(3)}:1) — игра считает мир квадратным</span><br>`
+                        : '') +
+                    (mismatch
+                        ? `<span style="color:#f48771;">⚠ Размер мира ${s.worldSizeKm} км ≠ ${sizeKm.toFixed(2)} км — нажмите «⇄ Масштаб»</span>`
+                        : '<span style="color:#6a9955;">✓ Размер мира соответствует координатам</span>');
+            }
+
+            let warn = '';
+            if (s.minHeightM >= s.maxHeightM) warn += '<span style="color:#f48771;">⚠ Мин. высота &lt; макс.</span><br>';
+            if (s.fogMinM >= s.fogMaxM) warn += '<span style="color:#f48771;">⚠ Туман: низ &lt; верх</span><br>';
+
+            const stepM = (s.maxHeightM - s.minHeightM) / 255;
+            const pixelSizeM = (s.worldSizeKm * 1000) / SIZE;
+            info.innerHTML =
+                warn +
+                `Мир: ${s.worldSizeKm}×${s.worldSizeKm} км<br>` +
+                `Высоты: ${s.minHeightM}–${s.maxHeightM} м<br>` +
+                `Шаг: ~${stepM.toFixed(1)} м/ед.<br>` +
+                `Разрешение: ${pixelSizeM.toFixed(1)} м/пикс<br>` +
+                geoHtml + '<br>' +
+                `<span style="color:#6ba3d9;">🌫 Туман: ${s.fogMinM}–${s.fogMaxM} м (${Math.round(s.fogDensity*100)}%)</span>`;
+        }
+
+        ['world-size-km', 'min-height-m', 'max-height-m', 'fog-min-m', 'fog-max-m', 'fog-density'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateSettingsInfo);
+        });
+
+        // === СТАРТ ИГРОКА ===
+        function updateStartUI() {
+            if (playerStart) {
+                document.getElementById('start-x').value = Math.round(playerStart.x);
+                document.getElementById('start-y').value = Math.round(playerStart.y);
+                document.getElementById('start-angle').value = Math.round(playerStart.angle * 180 / Math.PI);
+                document.getElementById('start-remove').disabled = false;
+            } else {
+                document.getElementById('start-x').value = '';
+                document.getElementById('start-y').value = '';
+                document.getElementById('start-angle').value = '';
+                document.getElementById('start-remove').disabled = true;
+            }
+        }
+
+        function removePlayerStart() {
+            playerStart = null;
+            updateStartUI();
+            drawOverlay();
+        }
+
+        // === НАЗВАНИЯ ШТОЛЕН ===
+        const DEFAULT_ADIT_LABEL = 'Штольня';
+        const DEFAULT_ADIT_URL = 'data/shtolnya31.html';
+
+        function getNewAditLabel() {
+            const el = document.getElementById('adit-label');
+            return (el.value || '').trim() || DEFAULT_ADIT_LABEL;
+        }
+
+        function getNewAditUrl() {
+            const el = document.getElementById('adit-url');
+            return (el.value || '').trim() || DEFAULT_ADIT_URL;
+        }
+
+        function getAdits() {
+            return mapObjects.filter(obj => obj.type === 'adit');
+        }
+
+        function updateAditUI() {
+            const list = document.getElementById('adit-list');
+            const adits = getAdits();
+            list.innerHTML = '';
+            if (adits.length === 0) {
+                list.innerHTML = '<div style="font-size:11px; color:#777;">Штолен пока нет</div>';
+                return;
+            }
+            adits.forEach((adit, i) => {
+                const row = document.createElement('div');
+                row.className = 'adit-row';
+
+                const title = document.createElement('div');
+                title.className = 'adit-row-title';
+                const num = document.createElement('span');
+                num.textContent = `#${i + 1}`;
+                const pos = document.createElement('span');
+                const aditGeo = pxToLatLng(adit.x, adit.y);
+                pos.textContent = `X ${Math.round(adit.x)}, Y ${Math.round(adit.y)}`;
+                pos.title = aditGeo
+                    ? `${aditGeo.lat.toFixed(7)}, ${aditGeo.lng.toFixed(7)}`
+                    : 'Топокоординаты не заданы (не заполнены углы карты)';
+                title.appendChild(num);
+                title.appendChild(pos);
+
+                // Точное положение штольни по топографическим координатам
+                const geoRow = document.createElement('div');
+                geoRow.className = 'adit-geo-row';
+
+                const latLabel = document.createElement('span');
+                latLabel.textContent = 'Lat';
+                const latInput = document.createElement('input');
+                latInput.type = 'text';
+                latInput.inputMode = 'decimal';
+                latInput.placeholder = '44.000000';
+                latInput.title = 'Широта (EPSG:4326)';
+                latInput.value = aditGeo ? aditGeo.lat.toFixed(7) : '';
+                latInput.disabled = !aditGeo;
+
+                const lngLabel = document.createElement('span');
+                lngLabel.textContent = 'Lng';
+                const lngInput = document.createElement('input');
+                lngInput.type = 'text';
+                lngInput.inputMode = 'decimal';
+                lngInput.placeholder = '43.000000';
+                lngInput.title = 'Долгота (EPSG:4326)';
+                lngInput.value = aditGeo ? aditGeo.lng.toFixed(7) : '';
+                lngInput.disabled = !aditGeo;
+
+                const moveByGeo = () => {
+                    const lat = parseFloat(latInput.value);
+                    const lng = parseFloat(lngInput.value);
+                    if (!isFinite(lat) || !isFinite(lng)) return;
+                    const px = latLngToPx(lat, lng);
+                    if (!px) return;
+                    adit.x = Math.max(0, Math.min(SIZE, px.x));
+                    adit.y = Math.max(0, Math.min(SIZE, px.y));
+                    updateAditUI();
+                    drawOverlay();
+                };
+                latInput.addEventListener('change', moveByGeo);
+                lngInput.addEventListener('change', moveByGeo);
+
+                geoRow.appendChild(latLabel);
+                geoRow.appendChild(latInput);
+                geoRow.appendChild(lngLabel);
+                geoRow.appendChild(lngInput);
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = adit.label || DEFAULT_ADIT_LABEL;
+                input.addEventListener('input', () => {
+                    adit.label = input.value.trim() || DEFAULT_ADIT_LABEL;
+                    drawOverlay();
+                });
+
+                const urlInput = document.createElement('input');
+                urlInput.type = 'text';
+                urlInput.className = 'adit-url';
+                urlInput.title = 'Ссылка на файл штольни (открывается при входе)';
+                urlInput.placeholder = DEFAULT_ADIT_URL;
+                urlInput.setAttribute('list', 'adit-url-list');
+                urlInput.value = adit.url || '';
+                urlInput.addEventListener('input', () => {
+                    const value = urlInput.value.trim();
+                    if (value) adit.url = value;
+                    else delete adit.url;
+                });
+
+                row.appendChild(title);
+                row.appendChild(geoRow);
+                row.appendChild(input);
+                row.appendChild(urlInput);
+                list.appendChild(row);
+            });
+        }
+
+        ['start-x', 'start-y', 'start-angle'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                if (!playerStart) playerStart = { x: 0, y: 0, angle: 0 };
+                const x = parseFloat(document.getElementById('start-x').value);
+                const y = parseFloat(document.getElementById('start-y').value);
+                const a = parseFloat(document.getElementById('start-angle').value);
+                if (isFinite(x)) playerStart.x = Math.max(0, Math.min(SIZE, x));
+                if (isFinite(y)) playerStart.y = Math.max(0, Math.min(SIZE, y));
+                if (isFinite(a)) playerStart.angle = a * Math.PI / 180;
+                drawOverlay();
+            });
+        });
+
+        // === ИНСТРУМЕНТЫ ===
+        function setTool(tool) {
+            currentTool = tool;
+            currentRoadPoints = [];
+            isRightDrag = false;
+            isMouseDown = false;
+            document.querySelectorAll('#toolbar button').forEach(btn => btn.classList.remove('active'));
+            const btn = document.getElementById(`tool-${tool}`);
+            if (btn) btn.classList.add('active');
+            document.getElementById('start-panel').classList.toggle('visible', tool === 'start');
+            document.getElementById('forest-panel').classList.toggle('visible', tool === 'forest');
+            document.getElementById('adit-panel').classList.toggle('visible', tool === 'adit');
+            if (tool === 'start') updateStartUI();
+            if (tool === 'adit') updateAditUI();
+            drawOverlay();
+        }
+
+        document.getElementById('brush-size').addEventListener('input', (e) => {
+            brushSize = parseInt(e.target.value);
+            document.getElementById('val-size').innerText = brushSize;
+            drawOverlay();
+        });
+        document.getElementById('brush-speed').addEventListener('input', (e) => {
+            brushSpeed = parseInt(e.target.value);
+            document.getElementById('val-speed').innerText = brushSpeed;
+        });
+        document.getElementById('forest-density').addEventListener('input', (e) => {
+            forestDensity = parseFloat(e.target.value);
+            document.getElementById('val-forest-density').innerText = forestDensity.toFixed(2);
+        });
+
+        // === МЫШЬ ===
+        function getMousePos(e) {
+            const rect = overlayCanvas.getBoundingClientRect();
+            return {
+                x: Math.floor((e.clientX - rect.left) * (SIZE / rect.width)),
+                y: Math.floor((e.clientY - rect.top) * (SIZE / rect.height))
+            };
+        }
+
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const cr = container.getBoundingClientRect();
+            const sx = e.clientX - cr.left, sy = e.clientY - cr.top;
+            const cx = (sx - panX) / zoom, cy = (sy - panY) / zoom;
+            const factor = e.deltaY > 0 ? 0.9 : 1.1;
+            const nz = Math.max(0.3, Math.min(10, zoom * factor));
+            panX = sx - cx * nz;
+            panY = sy - cy * nz;
+            zoom = nz;
+            applyTransform();
+        }, { passive: false });
+
+        function startPan(e) {
+            isPanning = true;
+            panStartX = e.clientX; panStartY = e.clientY;
+            panStartPanX = panX; panStartPanY = panY;
+            container.classList.add('panning');
+            overlayCanvas.style.cursor = 'grabbing';
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                panX = panStartPanX + (e.clientX - panStartX);
+                panY = panStartPanY + (e.clientY - panStartY);
+                applyTransform();
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 2) {
+                isRightDrag = false;
+                return;
+            }
+            if (isPanning) {
+                isPanning = false;
+                container.classList.remove('panning');
+                overlayCanvas.style.cursor = isSpacePressed ? 'grab' : 'crosshair';
+            }
+            if (isMouseDown && currentTool === 'road' && currentRoadPoints.length > 0) {
+                mapObjects.push({ type: 'road', points: [...currentRoadPoints] });
+                currentRoadPoints = [];
+                drawOverlay();
+            }
+            isMouseDown = false;
+            isRotatingStart = false;
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                isSpacePressed = true;
+                if (!isPanning) overlayCanvas.style.cursor = 'grab';
+                e.preventDefault();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                isSpacePressed = false;
+                if (!isPanning) overlayCanvas.style.cursor = 'crosshair';
+            }
+        });
+
+        overlayCanvas.addEventListener('mousedown', (e) => {
+            if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
+                startPan(e); e.preventDefault(); return;
+            }
+
+            const pos = getMousePos(e);
+            mouseX = pos.x; mouseY = pos.y;
+
+            // ── ПКМ ──
+            if (e.button === 2) {
+                if (currentTool === 'forest') {
+                    // Ластик леса: удаляет ТОЛЬКО деревья в радиусе кисти
+                    eraseForestAt(pos.x, pos.y);
+                    isRightDrag = true;
+                    drawOverlay();
+                } else if (currentTool === 'tree' || currentTool === 'adit' || currentTool === 'ruin') {
+                    // Удалить один ближайший объект
+                    eraseSingleObjectAt(pos.x, pos.y);
+                    drawOverlay();
+                } else if (currentTool === 'erase') {
+                    eraseAt(pos.x, pos.y);
+                    isRightDrag = true;
+                    drawOverlay();
+                }
+                return;
+            }
+
+            if (e.button !== 0) return;
+            isMouseDown = true;
+
+            // ── ЛКМ ──
+            if (currentTool === 'start') {
+                if (playerStart) {
+                    const dist = Math.hypot(pos.x - playerStart.x, pos.y - playerStart.y);
+                    if (dist < 15) { isRotatingStart = true; return; }
+                }
+                playerStart = {
+                    x: pos.x, y: pos.y,
+                    angle: Math.atan2(pos.y - SIZE / 2, pos.x - SIZE / 2)
+                };
+                isRotatingStart = true;
+                updateStartUI();
+                drawOverlay();
+                return;
+            }
+
+            if (currentTool === 'erase') {
+                eraseAt(pos.x, pos.y);
+                drawOverlay();
+            } else if (currentTool === 'tree' || currentTool === 'adit' || currentTool === 'ruin') {
+                placeObject(currentTool, pos.x, pos.y);
+            } else if (currentTool === 'forest') {
+                paintForest(pos.x, pos.y);
+                drawOverlay();
+            }
+        });
+
+        overlayCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        overlayCanvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+
+        overlayCanvas.addEventListener('mousemove', (e) => {
+            if (isPanning) return;
+            const pos = getMousePos(e);
+            mouseX = pos.x; mouseY = pos.y;
+            const geoPos = pxToLatLng(mouseX, mouseY);
+            document.getElementById('coords').innerText =
+                `X: ${mouseX}, Y: ${mouseY} | Высота: ${getPixelHeight(mouseX, mouseY)}` +
+                (geoPos ? ` | ${geoPos.lat.toFixed(6)}, ${geoPos.lng.toFixed(6)}` : '');
+
+            if (isMouseDown) {
+                if (currentTool === 'raise' || currentTool === 'lower') paintTerrain(mouseX, mouseY);
+                else if (currentTool === 'forest') paintForest(mouseX, mouseY);
+                else if (currentTool === 'erase') eraseAt(mouseX, mouseY);
+                else if (currentTool === 'road') {
+                    const last = currentRoadPoints[currentRoadPoints.length - 1];
+                    if (!last || Math.hypot(mouseX - last.x, mouseY - last.y) > 5)
+                        currentRoadPoints.push({ x: mouseX, y: mouseY });
+                } else if (currentTool === 'start' && isRotatingStart && playerStart) {
+                    const dist = Math.hypot(mouseX - playerStart.x, mouseY - playerStart.y);
+                    if (dist > 5) {
+                        playerStart.angle = Math.atan2(mouseY - playerStart.y, mouseX - playerStart.x);
+                        updateStartUI();
+                    }
+                }
+            } else if (isRightDrag) {
+                // ПКМ-drag: ластик
+                if (currentTool === 'forest') eraseForestAt(mouseX, mouseY);
+                else if (currentTool === 'erase') eraseAt(mouseX, mouseY);
+            }
+
+            drawOverlay();
+        });
+
+        // === РЕЛЬЕФ ===
+        function getPixelHeight(x, y) {
+            if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) return 0;
+            return ctxBase.getImageData(x, y, 1, 1).data[0];
+        }
+
+        function paintTerrain(cx, cy) {
+            const imgData = ctxBase.getImageData(0, 0, SIZE, SIZE);
+            const data = imgData.data;
+            const startX = Math.max(0, cx - brushSize);
+            const endX = Math.min(SIZE, cx + brushSize);
+            const startY = Math.max(0, cy - brushSize);
+            const endY = Math.min(SIZE, cy + brushSize);
+            const dir = currentTool === 'raise' ? 1 : -1;
+
+            for (let y = startY; y < endY; y++) {
+                for (let x = startX; x < endX; x++) {
+                    const dx = x - cx, dy = y - cy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist <= brushSize) {
+                        let f = 1 - dist / brushSize;
+                        f = f * f * (3 - 2 * f);
+                        const idx = (y * SIZE + x) * 4;
+                        let val = data[idx] + dir * f * brushSpeed;
+                        val = Math.max(0, Math.min(255, val));
+                        data[idx] = data[idx+1] = data[idx+2] = val;
+                        data[idx+3] = 255;
+                    }
+                }
+            }
+            ctxBase.putImageData(imgData, 0, 0);
+        }
+
+        // === ЛЕС (кисть) ===
+        // Уменьшаем размер ячейки проверки коллизий, чтобы деревья могли стоять ближе
+        const MIN_TREE_DIST = 2.5; 
+
+        function treeKey(x, y) {
+            return `${Math.floor(x / MIN_TREE_DIST)},${Math.floor(y / MIN_TREE_DIST)}`;
+        }
+
+        function paintForest(cx, cy) {
+            // Считаем площадь кисти и количество попыток посадки
+            const area = Math.PI * brushSize * brushSize;
+            // Множитель 0.15 регулирует общую густоту (увеличьте до 0.25 для очень густого леса)
+            const attempts = Math.floor(area * 0.15 * forestDensity);
+
+            for (let i = 0; i < attempts; i++) {
+                // Равномерное случайное распределение внутри круга (без сетки!)
+                const angle = Math.random() * Math.PI * 2;
+                // Используем корень или степень (0.6 - 0.8), чтобы к краям лес редел естественнее
+                const radius = brushSize * Math.pow(Math.random(), 0.65);
+
+                const jx = cx + Math.cos(angle) * radius;
+                const jy = cy + Math.sin(angle) * radius;
+
+                if (jx < 0 || jx >= SIZE || jy < 0 || jy >= SIZE) continue;
+
+                const key = treeKey(jx, jy);
+                if (treeGrid.has(key)) continue;
+
+                treeGrid.set(key, true);
+                mapObjects.push({
+                    type: 'tree',
+                    x: jx, // Убрали Math.round! Дробные координаты полностью ломают сетку
+                    y: jy,
+                    angle: Math.random() * Math.PI * 2,
+                    scale: 0.65 + Math.random() * 0.7 // Разный размер деревьев (если поддерживается рендером)
+                });
+            }
+        }
+
+        // === ОБЪЕКТЫ ===
+        function placeObject(type, x, y) {
+            const angle = (type === 'tree' || type === 'ruin') ? Math.random() * Math.PI * 2 : 0;
+            const aditAngle = type === 'adit' ? Math.random() * Math.PI * 2 : 0;
+            const obj = { type, x, y, angle, aditAngle };
+            if (type === 'adit') {
+                obj.label = getNewAditLabel();
+                obj.url = getNewAditUrl();
+            }
+            mapObjects.push(obj);
+            if (type === 'tree') treeGrid.set(treeKey(x, y), true);
+            if (type === 'adit') updateAditUI();
+            drawOverlay();
+        }
+
+        function eraseAt(cx, cy) {
+            const before = mapObjects.length;
+            let aditRemoved = false;
+            mapObjects = mapObjects.filter(obj => {
+                if (obj.type === 'road') {
+                    return !obj.points.some(p => Math.hypot(p.x - cx, p.y - cy) < Math.max(brushSize, 15));
+                }
+                // Деревья стираются радиусом кисти, остальные — точным кликом
+                const r = obj.type === 'tree' ? brushSize : 15;
+                const keep = Math.hypot(obj.x - cx, obj.y - cy) > r;
+                if (!keep && obj.type === 'adit') aditRemoved = true;
+                return keep;
+            });
+            if (mapObjects.length !== before) {
+                rebuildTreeGrid();
+                if (aditRemoved) updateAditUI();
+            }
+        }
+
+        // Ластик леса: стирает ТОЛЬКО деревья в радиусе кисти
+        function eraseForestAt(cx, cy) {
+            const before = mapObjects.length;
+            mapObjects = mapObjects.filter(obj => {
+                if (obj.type !== 'tree') return true;
+                return Math.hypot(obj.x - cx, obj.y - cy) > brushSize;
+            });
+            if (mapObjects.length !== before) rebuildTreeGrid();
+        }
+
+        // Удаление одного ближайшего объекта (дерево/штольня/руины) в радиусе 20 px
+        function eraseSingleObjectAt(x, y) {
+            const RADIUS = 20;
+            let closestIdx = -1;
+            let closestDist = RADIUS;
+            for (let i = 0; i < mapObjects.length; i++) {
+                const obj = mapObjects[i];
+                if (obj.type !== 'tree' && obj.type !== 'adit' && obj.type !== 'ruin') continue;
+                const d = Math.hypot(obj.x - x, obj.y - y);
+                if (d < closestDist) {
+                    closestDist = d;
+                    closestIdx = i;
+                }
+            }
+            if (closestIdx >= 0) {
+                const removed = mapObjects.splice(closestIdx, 1)[0];
+                if (removed.type === 'tree') rebuildTreeGrid();
+                if (removed.type === 'adit') updateAditUI();
+            }
+        }
+
+        // === ОТРИСОВКА ===
+        function drawOverlay() {
+            ctxOverlay.clearRect(0, 0, SIZE, SIZE);
+
+            // 1. Рисуемая дорога (preview)
+            if (currentTool === 'road' && currentRoadPoints.length > 0) {
+                ctxOverlay.beginPath();
+                ctxOverlay.moveTo(currentRoadPoints[0].x, currentRoadPoints[0].y);
+                for (let i = 1; i < currentRoadPoints.length; i++)
+                    ctxOverlay.lineTo(currentRoadPoints[i].x, currentRoadPoints[i].y);
+                ctxOverlay.lineTo(mouseX, mouseY);
+                ctxOverlay.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+                ctxOverlay.lineWidth = 2;
+                ctxOverlay.stroke();
+            }
+
+            // 2. Все деревья (быстрый рендер через fillRect)
+            ctxOverlay.fillStyle = '#2E4A21';
+            for (const obj of mapObjects) {
+                if (obj.type === 'tree') {
+                    ctxOverlay.fillRect(obj.x - 1.5, obj.y - 1.5, 3, 3);
+                }
+            }
+
+            // 3. Прочие объекты
+            for (const obj of mapObjects) {
+                if (obj.type === 'road') {
+                    ctxOverlay.beginPath();
+                    if (obj.points.length > 0) {
+                        ctxOverlay.moveTo(obj.points[0].x, obj.points[0].y);
+                        for (let i = 1; i < obj.points.length; i++)
+                            ctxOverlay.lineTo(obj.points[i].x, obj.points[i].y);
+                    }
+                    ctxOverlay.strokeStyle = '#888';
+                    ctxOverlay.lineWidth = 6;
+                    ctxOverlay.lineJoin = 'round';
+                    ctxOverlay.stroke();
+                } else if (obj.type === 'adit') {
+                    ctxOverlay.beginPath();
+                    ctxOverlay.arc(obj.x, obj.y, 6, 0, Math.PI * 2);
+                    ctxOverlay.fillStyle = '#ffd700';
+                    ctxOverlay.fill();
+                    ctxOverlay.beginPath();
+                    ctxOverlay.moveTo(obj.x, obj.y);
+                    ctxOverlay.lineTo(obj.x + Math.cos(obj.aditAngle) * 15, obj.y + Math.sin(obj.aditAngle) * 15);
+                    ctxOverlay.strokeStyle = '#ffd700';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.stroke();
+
+                    ctxOverlay.fillStyle = '#ffe680';
+                    ctxOverlay.font = 'bold 10px sans-serif';
+                    ctxOverlay.textAlign = 'center';
+                    ctxOverlay.textBaseline = 'bottom';
+                    ctxOverlay.fillText(obj.label || DEFAULT_ADIT_LABEL, obj.x, obj.y - 9, 90);
+                    ctxOverlay.textBaseline = 'alphabetic';
+                } else if (obj.type === 'ruin') {
+                    ctxOverlay.fillStyle = '#aaaaaa';
+                    ctxOverlay.fillRect(obj.x - 4, obj.y - 4, 8, 8);
+                }
+            }
+
+            // 4. Старт игрока
+            if (playerStart) {
+                const px = playerStart.x, py = playerStart.y;
+                const ex = px + Math.cos(playerStart.angle) * 35;
+                const ey = py + Math.sin(playerStart.angle) * 35;
+
+                ctxOverlay.beginPath();
+                ctxOverlay.arc(px, py, 8, 0, Math.PI * 2);
+                ctxOverlay.fillStyle = '#00BFFF';
+                ctxOverlay.fill();
+                ctxOverlay.strokeStyle = '#ffffff';
+                ctxOverlay.lineWidth = 2;
+                ctxOverlay.stroke();
+
+                ctxOverlay.beginPath();
+                ctxOverlay.moveTo(px, py);
+                ctxOverlay.lineTo(ex, ey);
+                ctxOverlay.strokeStyle = '#00BFFF';
+                ctxOverlay.lineWidth = 3;
+                ctxOverlay.stroke();
+
+                ctxOverlay.beginPath();
+                ctxOverlay.moveTo(ex, ey);
+                ctxOverlay.lineTo(ex - Math.cos(playerStart.angle + 0.5) * 10, ey - Math.sin(playerStart.angle + 0.5) * 10);
+                ctxOverlay.moveTo(ex, ey);
+                ctxOverlay.lineTo(ex - Math.cos(playerStart.angle - 0.5) * 10, ey - Math.sin(playerStart.angle - 0.5) * 10);
+                ctxOverlay.stroke();
+
+                ctxOverlay.fillStyle = '#00BFFF';
+                ctxOverlay.font = 'bold 12px sans-serif';
+                ctxOverlay.textAlign = 'center';
+                ctxOverlay.fillText('СТАРТ', px, py - 15);
+            }
+
+            // 5. Курсор-кисть
+            if (currentTool === 'raise' || currentTool === 'lower' ||
+                currentTool === 'forest' || currentTool === 'erase') {
+                ctxOverlay.beginPath();
+                ctxOverlay.arc(mouseX, mouseY, brushSize, 0, Math.PI * 2);
+
+                if (currentTool === 'raise') {
+                    ctxOverlay.strokeStyle = 'rgba(0,255,0,0.5)';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.stroke();
+                } else if (currentTool === 'lower') {
+                    ctxOverlay.strokeStyle = 'rgba(255,0,0,0.5)';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.stroke();
+                } else if (currentTool === 'forest') {
+                    // Зелёная полупрозрачная заливка = плотность леса
+                    const alpha = 0.08 + forestDensity * 0.18;
+                    ctxOverlay.fillStyle = `rgba(50, 180, 50, ${alpha})`;
+                    ctxOverlay.fill();
+                    ctxOverlay.strokeStyle = 'rgba(80, 255, 80, 0.85)';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.stroke();
+                } else if (currentTool === 'erase') {
+                    ctxOverlay.strokeStyle = 'rgba(255,80,80,0.7)';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.stroke();
+                }
+            }
+        }
+
+        // === ЗАГРУЗКА ===
+        document.getElementById('file-heightmap-png').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const img = new Image();
+                img.onload = () => {
+                    ctxBase.fillStyle = '#000';
+                    ctxBase.fillRect(0, 0, SIZE, SIZE);
+                    ctxBase.drawImage(img, 0, 0, SIZE, SIZE);
+                    setStatus(`✅ heightmap.png (${img.width}×${img.height})`);
+                };
+                img.onerror = () => setStatus("❌ Не изображение", true);
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        });
+
+        document.getElementById('file-heightmap-js').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            readJSFile(file, (sandbox) => {
+                if (!sandbox.HEIGHTMAP_SRC) { setStatus("❌ Нет HEIGHTMAP_SRC", true); return; }
+                if (sandbox.HEIGHTMAP_SETTINGS) applyWorldSettings(sandbox.HEIGHTMAP_SETTINGS);
+                const img = new Image();
+                img.onload = () => {
+                    ctxBase.fillStyle = '#000';
+                    ctxBase.fillRect(0, 0, SIZE, SIZE);
+                    ctxBase.drawImage(img, 0, 0, SIZE, SIZE);
+                    setStatus("✅ heightmap_data.js загружен");
+                };
+                img.src = sandbox.HEIGHTMAP_SRC;
+            });
+            e.target.value = '';
+        });
+
+        document.getElementById('file-objects-js').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            readJSFile(file, (sandbox) => {
+                if (!sandbox.MAP_OBJECTS || !Array.isArray(sandbox.MAP_OBJECTS.objects)) {
+                    setStatus("❌ Нет MAP_OBJECTS", true); return;
+                }
+                const data = sandbox.MAP_OBJECTS;
+                const ms = data.mapSize || SIZE;
+                const scale = SIZE / ms;
+
+                if (data.geo) setGeoInputs(data.geo);
+
+                mapObjects = data.objects.map(obj => {
+                    if (obj.type === 'road')
+                        return { ...obj, points: obj.points.map(p => ({ x: p.x * scale, y: p.y * scale })) };
+                    return { ...obj, x: obj.x * scale, y: obj.y * scale };
+                });
+
+                if (data.playerStart) {
+                    playerStart = {
+                        x: data.playerStart.x * scale,
+                        y: data.playerStart.y * scale,
+                        angle: data.playerStart.angle
+                    };
+                } else {
+                    playerStart = null;
+                }
+                updateStartUI();
+
+                if (data.worldSettings && !sandbox.HEIGHTMAP_SETTINGS) applyWorldSettings(data.worldSettings);
+
+                currentRoadPoints = [];
+                rebuildTreeGrid();
+                updateAditUI();
+                drawOverlay();
+
+                const treeCount = mapObjects.filter(o => o.type === 'tree').length;
+                setStatus(`✅ Загружено ${mapObjects.length} объектов (${treeCount} деревьев)`);
+                updateSettingsInfo();
+            });
+            e.target.value = '';
+        });
+
+        // === ЭКСПОРТ ===
+        function exportHeightmapJS() {
+            const s = getWorldSettings();
+            if (s.minHeightM >= s.maxHeightM) { alert("Мин. высота < макс."); return; }
+            if (s.fogMinM >= s.fogMaxM) { alert("Туман: низ < верх"); return; }
+            const dataUrl = baseCanvas.toDataURL('image/png');
+            const content =
+`// Автоматически сгенерировано редактором карт.
+window.HEIGHTMAP_SRC = "${dataUrl}";
+
+window.HEIGHTMAP_SETTINGS = ${JSON.stringify(s, null, 4)};
+`;
+            downloadFile(content, 'heightmap_data.js', 'application/javascript');
+            setStatus("✅ heightmap_data.js сохранён");
+        }
+
+        function exportObjectsJS() {
+            const data = {
+                mapSize: SIZE,
+                worldSettings: getWorldSettings(),
+                playerStart: playerStart ? {
+                    x: playerStart.x,
+                    y: playerStart.y,
+                    angle: playerStart.angle
+                } : null,
+                geo: readGeoLatLng(),
+                objects: mapObjects.map(obj => {
+                    if (obj.type !== 'adit') return obj;
+                    const p = pxToLatLng(obj.x, obj.y);
+                    return p ? { ...obj, lat: p.lat, lng: p.lng } : obj;
+                })
+            };
+            const content =
+`// Автоматически сгенерировано редактором карт.
+window.MAP_OBJECTS = ${JSON.stringify(data, null, 2)};
+`;
+            downloadFile(content, 'map_objects.js', 'application/javascript');
+            const treeCount = mapObjects.filter(o => o.type === 'tree').length;
+            setStatus(`✅ ${mapObjects.length} объектов (${treeCount} деревьев)${playerStart ? ' + старт' : ''}`);
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = url;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function clearAll() {
+            if (!confirm('Очистить карту и все объекты?')) return;
+            ctxBase.fillStyle = '#000';
+            ctxBase.fillRect(0, 0, SIZE, SIZE);
+            mapObjects = [];
+            currentRoadPoints = [];
+            playerStart = null;
+            treeGrid.clear();
+            updateStartUI();
+            updateAditUI();
+            drawOverlay();
+            setStatus("Карта очищена");
+        }
+
+        // === СТАРТ ===
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                centerView();
+                // Координаты углов карты Бештау по умолчанию
+                setGeoInputs(GEO_PRESET);
+                applyGeoToWorldSize(true);
+                updateSettingsInfo();
+                drawOverlay();
+            }, 50);
+        });
+    </script>
+</body>
+</html>
