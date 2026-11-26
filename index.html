@@ -6,6 +6,7 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; }
         #info { position: absolute; top: 10px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 3px black; pointer-events: none; }
+        #heading { font-size: 15px; margin-top: 2px; opacity: 0.9; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: white; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: width 0.1s, height 0.1s; }
         #blocker { position: absolute; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 10; }
         #instructions { color: white; text-align: center; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
@@ -24,7 +25,10 @@
             <p>W, A, S, D - движение<br>Shift - бег<br>Space - прыжок<br>Мышь - осмотр</p>
         </div>
     </div>
-    <div id="info">Высота: <span id="altitude">0</span> м</div>
+    <div id="info">
+        <div>Высота: <span id="altitude">0</span> м</div>
+        <div id="heading">Направление: <span id="headingDir">N</span></div>
+    </div>
     <div id="crosshair"></div>
     <div id="hint">Нажмите, чтобы войти в штольню</div>
     <div id="summitNotification">Вы достигли вершины горы</div>
@@ -44,7 +48,7 @@
 // ============================================================
 const worldSettings = window.HEIGHTMAP_SETTINGS || {
     worldSizeKm: 9,
-    minHeightM: 500,
+    minHeightM: 0,
     maxHeightM: 1400,
     fogMinM: 800,
     fogMaxM: 1600,
@@ -306,8 +310,8 @@ function buildTerrain() {
 
         const t = (h - MIN_HEIGHT_M) / HEIGHT_RANGE_M;
         if      (t < 0.30) color.setHex(0x5A6345);
-        else if (t < 0.60) color.setHex(0x2E4A21);
-        else if (t < 0.85) color.setHex(0x7A7568);
+        else if (t < 0.70) color.setHex(0x2E4A21);
+        else if (t < 0.90) color.setHex(0x7A7568);
         else               color.setHex(0xA8A8A8);
 
         colors.push(color.r, color.g, color.b);
@@ -1771,7 +1775,11 @@ const raycaster   = new THREE.Raycaster();
 const downVector  = new THREE.Vector3(0, -1, 0);
 const clock       = new THREE.Clock();
 const altitudeDisplay    = document.getElementById('altitude');
+const headingDisplay     = document.getElementById('headingDir');
 const summitNotification = document.getElementById('summitNotification');
+
+const COMPASS_POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compassForward = new THREE.Vector3();
 
 let geigerTimer = 0;
 let summitReached = false;
@@ -1780,12 +1788,24 @@ const SUMMIT_RADIUS_M = TERRAIN_SIZE_M * 0.02;
 const SUMMIT_HEIGHT_M = MIN_HEIGHT_M + HEIGHT_RANGE_M * 0.9;
 const BOUNDARY_M      = HALF_WORLD_M * 0.98;
 
+// Сторона света по горизонтальному направлению взгляда камеры
+function updateHeading() {
+    camera.getWorldDirection(compassForward);
+    compassForward.y = 0; // только горизонтальная составляющая
+    if (compassForward.lengthSq() < 1e-6) return;
+    compassForward.normalize();
+    const deg = Math.atan2(compassForward.x, -compassForward.z) * 180 / Math.PI; // 0° = север (−Z), 90° = восток (+X)
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    headingDisplay.textContent = COMPASS_POINTS[idx];
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.1);
     const tNow = clock.elapsedTime;
 
     updateAimFeedback();
+    updateHeading();
 
     if (controls.isLocked) {
         // Движение
