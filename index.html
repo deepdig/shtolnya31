@@ -33,9 +33,9 @@
     <div id="hint">Нажмите, чтобы войти в штольню</div>
     <div id="summitNotification">Вы достигли вершины горы</div>
 
-    <!-- Локальные библиотеки (убедитесь, что пути верные) -->
-    <script src="data/js/three.min.js"></script>
-    <script src="data/js/PointerLockControls.js"></script>
+    <!-- Локальные библиотеки three.js r187 (глобальная сборка, работает по file://) -->
+    <script src="data/threejs/187/build/three.global.js"></script>
+    <script src="data/threejs/187/examples/js/PointerLockControls.js"></script>
     
     <!-- Загрузка объектов карты -->
     <script src="data/maps/map_objects.js"></script>
@@ -187,7 +187,6 @@ function getSlopeSpeedMultiplier(moveDirX, moveDirZ) {
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 // Свет
@@ -344,8 +343,7 @@ function createCanvasTexture(drawCallback, w = 256, h = 256) {
     const ctx = canvas.getContext('2d');
     drawCallback(ctx, w, h);
     const texture = new THREE.CanvasTexture(canvas);
-    if (THREE.sRGBEncoding !== undefined) texture.encoding = THREE.sRGBEncoding;
-    else if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
 }
 
