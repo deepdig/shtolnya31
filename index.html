@@ -14,6 +14,11 @@
         #summitNotification { position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%) scale(0.9); color: #fff; background: rgba(0,0,0,0.78); padding: 22px 46px; border-radius: 14px; border: 2px solid #ffd700; font-size: 28px; font-weight: bold; text-shadow: 2px 2px 6px black; box-shadow: 0 0 30px rgba(255, 215, 0, 0.55); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.8s ease, transform 0.8s ease; z-index: 100; }
         #summitNotification.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         #loading { position: absolute; top: 10%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; z-index: 20; }
+        #renderPanel { position: absolute; left: 16px; bottom: 16px; z-index: 30; width: 230px; padding: 12px 14px; border-radius: 10px; background: rgba(18,24,22,0.72); color: #eef2f0; font-size: 12px; line-height: 1.45; backdrop-filter: blur(6px); user-select: none; -webkit-user-select: none; }
+        #renderPanel .rp-row { display: block; margin: 0 0 8px 0; }
+        #renderPanel .rp-row:last-child { margin-bottom: 0; }
+        #renderPanel .rp-label { display: flex; justify-content: space-between; margin-bottom: 3px; color: #cfd8d4; }
+        #renderPanel input[type="range"] { width: 100%; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -28,6 +33,16 @@
     <div id="info">
         <div>Высота: <span id="altitude">0</span> м</div>
         <div id="heading">Направление: <span id="headingDir">N</span></div>
+    </div>
+    <div id="renderPanel">
+        <label class="rp-row">
+            <span class="rp-label">Плотность тумана <span id="fogDensityVal">0.003</span></span>
+            <input id="fogDensityRange" type="range" min="0.00002" max="0.01" step="0.00001" value="0.003">
+        </label>
+        <label class="rp-row">
+            <span class="rp-label">Яркость неба <span id="skyLightVal">1.00</span></span>
+            <input id="skyLightRange" type="range" min="0.4" max="2.0" step="0.05" value="1.0">
+        </label>
     </div>
     <div id="crosshair"></div>
     <div id="hint">Нажмите, чтобы войти в штольню</div>
@@ -74,9 +89,63 @@ console.log(`[Туман] ${FOG_MIN_M}–${FOG_MAX_M} м, плотность ${F
 // 1. СЦЕНА И РЕНДЕР
 // ============================================================
 const scene = new THREE.Scene();
-const fogColor = 0xD0D5D8;
+const fogColor = 0xC2CDD0;
 scene.background = new THREE.Color(fogColor);
-scene.fog = new THREE.Fog(fogColor, TERRAIN_SIZE_M * 0.05, TERRAIN_SIZE_M * 0.9);
+// Экспоненциальный туман как в образце (мягкая дымка, сгущается с расстоянием).
+// Плотность подобрана под карту 9×9 км: середина завесы ~4 км, дальние хребты ещё читаются.
+const FOG_EXP_DENSITY = 0.003; // 0.00016
+scene.fog = new THREE.FogExp2(fogColor, FOG_EXP_DENSITY);
+
+// Низовой туман: экспоненциальная дымка — только ниже FOG_TOP_M,
+// к границе плавно сходит на нет, выше 700 м её нет вовсе.
+const FOG_TOP_M      = 700; // м — потолок низового экспоненциального тумана
+const FOG_TOP_FADE_M = 150; // м — плавное затухание перед границей (550…700 м)
+const FOG_TOP_FROM_GLSL = (FOG_TOP_M - FOG_TOP_FADE_M).toFixed(1);
+const FOG_TOP_TO_GLSL   = FOG_TOP_M.toFixed(1);
+
+// three.js красит fog прямо в шейдере каждого материала и не знает высоту фрагмента,
+// поэтому подменяем фог-чанки: в вершинный добавляем мировую высоту вершины,
+// во фрагментный — затухание фактора тумана к границе. Один раз, до компиляции материалов.
+THREE.ShaderChunk.fog_pars_vertex = `
+#ifdef USE_FOG
+	varying float vFogDepth;
+	varying float vFogWorldY;
+#endif`;
+
+THREE.ShaderChunk.fog_vertex = `
+#ifdef USE_FOG
+	vFogDepth = - mvPosition.z;
+	// viewMatrix — это поворот, поэтому мировая высота = высота камеры плюс
+	// проекция сдвига от камеры на его второй столбец (обратное преобразование без inverse()).
+	vFogWorldY = cameraPosition.y + dot( mvPosition.xyz, viewMatrix[ 1 ].xyz );
+#endif`;
+
+THREE.ShaderChunk.fog_pars_fragment = `
+#ifdef USE_FOG
+	uniform vec3 fogColor;
+	varying float vFogDepth;
+	varying float vFogWorldY;
+	#ifdef FOG_EXP2
+		uniform float fogDensity;
+	#else
+		uniform float fogNear;
+		uniform float fogFar;
+	#endif
+#endif`;
+
+THREE.ShaderChunk.fog_fragment = `
+#ifdef USE_FOG
+	#ifdef FOG_EXP2
+		float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+	#else
+		float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+	#endif
+	#ifdef FOG_EXP2
+		// Низовой туман: ниже ${FOG_TOP_FROM_GLSL} м — целиком, к ${FOG_TOP_TO_GLSL} м гаснет, выше — его нет.
+		fogFactor *= 1.0 - smoothstep( ${FOG_TOP_FROM_GLSL}, ${FOG_TOP_TO_GLSL}, vFogWorldY );
+	#endif
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+#endif`;
 
 const camera = new THREE.PerspectiveCamera(
     75,
@@ -187,13 +256,17 @@ function getSlopeSpeedMultiplier(moveDirX, moveDirZ) {
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+// Тонмаппинг из образца. Экспозиция выше 1.0 компенсирует сжатие полутонов ACES,
+// чтобы карта не потемнела относительно прежнего вида.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
 document.body.appendChild(renderer.domElement);
 
-// Свет
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+// Свет — настроение образца: холодный свет неба и тёплый отражённый от земли
+const hemiLight = new THREE.HemisphereLight(0xdbe6ea, 0x3b2d22, 1.0);
 scene.add(hemiLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+const dirLight = new THREE.DirectionalLight(0xfff0d8, 0.85);
 dirLight.position.set(TERRAIN_SIZE_M * 0.3, MAX_HEIGHT_M * 2, TERRAIN_SIZE_M * 0.15);
 dirLight.castShadow = true;
 const shadowRange = TERRAIN_SIZE_M * 0.5;
@@ -405,112 +478,159 @@ const concreteTex = createCanvasTexture((ctx, w, h) => {
 const concreteMat     = new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.1, roughness: 0.9, flatShading: true, emissive: new THREE.Color(0x222222), emissiveIntensity: 1.0 });
 const darkInteriorMat = new THREE.MeshBasicMaterial({ color: 0x4a4a4a });
 const rustyDoorMat    = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8, metalness: 0.6 });
-const treeMat         = new THREE.MeshStandardMaterial({ color: 0x013220 });
-const trunkMat        = new THREE.MeshStandardMaterial({ color: 0x3E2723 });
+// Кора бука — процедурная текстура (порт из temp/forest.html)
+function createBarkTexture() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 512;
+    const ctx = c.getContext('2d');
+
+    ctx.fillStyle = '#686b68';
+    ctx.fillRect(0, 0, 256, 512);
+
+    for (let i = 0; i < 2500; i++) {
+        const shade = 75 + ((Math.random() * 45) | 0);
+        const greenTint = Math.random() > 0.75 ? 12 : 0;
+        ctx.fillStyle = `rgb(${shade}, ${shade + greenTint}, ${shade - 2})`;
+        ctx.fillRect(
+            Math.random() * 256,
+            Math.random() * 512,
+            6 + Math.random() * 24,
+            1 + Math.random() * 3
+        );
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 6);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+}
+
+const barkTex = createBarkTexture();
+
+// Листва: цвет белый, реальный зелёный даёт инстанс-цвет вокруг 0x3b592c
+const treeMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, side: THREE.DoubleSide });
+const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.85, metalness: 0.05 });
+const bushMat  = new THREE.MeshStandardMaterial({ color: 0x2c4222, roughness: 0.85, side: THREE.DoubleSide });
 const ruinMat         = new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.1, roughness: 0.85, flatShading: true, emissive: new THREE.Color(0x333333), emissiveIntensity: 1.0 });
 
-//===== Создание дерева дуб или ель =========
-function createPineGeometry() {
-    const tiers = [
-        { r: 3.3, h: 5.0, y: 4.5, segs: 6 },
-        { r: 2.5, h: 4.8, y: 7.5, segs: 6 },
-        { r: 1.6, h: 4.5, y: 10.5, segs: 5 }
-    ];
-
+//===== Дерево «бук» (порт createBeechTree из temp/forest.html) =========
+// Инстансы требуют единую сетку на дерево, поэтому части сливаем заранее
+function mergeTreeParts(parts) {
     const positions = [];
     const normals = [];
+    const uvs = [];
+    let hasUv = true;
 
-    tiers.forEach((tier, idx) => {
-        const cone = new THREE.ConeGeometry(tier.r, tier.h, tier.segs);
-        cone.rotateY(idx * 0.9);
-        cone.translate(0, tier.y, 0);
-
-        const pos = cone.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-            const vy = pos.getY(i);
-            if (vy < tier.y + tier.h * 0.4) {
-                const vx = pos.getX(i);
-                const vz = pos.getZ(i);
-                const jitter = 0.85 + Math.sin(vx * 3.1 + vz * 2.7 + idx) * 0.2;
-                pos.setX(i, vx * jitter);
-                pos.setZ(i, vz * jitter);
-            }
+    for (const geo of parts) {
+        const g = geo.index ? geo.toNonIndexed() : geo;
+        positions.push(...g.attributes.position.array);
+        normals.push(...g.attributes.normal.array);
+        if (g.attributes.uv) {
+            uvs.push(...g.attributes.uv.array);
+        } else {
+            hasUv = false;
         }
-        cone.computeVertexNormals();
-
-        const nonIndexed = cone.index ? cone.toNonIndexed() : cone;
-        positions.push(...nonIndexed.attributes.position.array);
-        normals.push(...nonIndexed.attributes.normal.array);
-    });
+    }
 
     const merged = new THREE.BufferGeometry();
     merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    if (hasUv && uvs.length) {
+        merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    }
     return merged;
 }
 
-function createBroadleafCrownGeometry() {
-    // 4 шапки с детализацией 0 — красиво и очень быстро
-    const blobs = [
-        { r: 3.4, x:  0.0, y: 8.6, z:  0.0, sx: 1.25, sy: 0.85, sz: 1.25 },
-        { r: 2.8, x: -2.0, y: 7.3, z:  1.0, sx: 1.10, sy: 0.80, sz: 1.00 },
-        { r: 2.7, x:  2.1, y: 7.5, z: -0.9, sx: 1.00, sy: 0.85, sz: 1.10 },
-        { r: 2.5, x:  0.2, y: 7.2, z:  1.9, sx: 1.10, sy: 0.75, sz: 1.00 }
+// Один вариант бука: ствол с изгибом и расширением у корней, ветви, шапки листвы
+function createBeechVariant(rand, cfg) {
+    const height = cfg.heightMin + rand() * (cfg.heightMax - cfg.heightMin);
+    const baseRadius = (0.32 + rand() * 0.22) * cfg.radiusScale;
+
+    const points = [];
+    const segments = 6;
+    const leanX = (rand() - 0.5) * 1.8;
+    const leanZ = (rand() - 0.5) * 1.8;
+
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        points.push(new THREE.Vector3(
+            Math.sin(t * Math.PI * 1.4) * 0.45 + leanX * t,
+            t * height,
+            Math.cos(t * Math.PI * 1.1) * 0.35 + leanZ * t
+        ));
+    }
+
+    const curve = new THREE.CatmullRomCurve3(points);
+    const trunkGeo = new THREE.TubeGeometry(curve, cfg.trunkTubular, baseRadius, cfg.trunkRadial, false);
+
+    // Сужение к вершине и расширение у корней
+    const tPos = trunkGeo.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < tPos.count; i++) {
+        v.fromBufferAttribute(tPos, i);
+        const hRatio = THREE.MathUtils.clamp(v.y / height, 0, 1);
+        const center = curve.getPoint(hRatio);
+        const flare = hRatio < 0.12 ? 1 + Math.pow((0.12 - hRatio) / 0.12, 2) * 0.85 : 1;
+        const taper = (1 - hRatio * 0.68) * flare;
+
+        v.x = center.x + (v.x - center.x) * taper;
+        v.z = center.z + (v.z - center.z) * taper;
+        tPos.setXYZ(i, v.x, v.y, v.z);
+    }
+    trunkGeo.computeVertexNormals();
+
+    const woodParts = [trunkGeo];
+    const leafParts = [];
+
+    // Ветви и крона
+    const branchCount = cfg.branchMin + Math.floor(rand() * cfg.branchRange);
+    for (let b = 0; b < branchCount; b++) {
+        const startT = 0.58 + (b / branchCount) * 0.35;
+        const startPt = curve.getPoint(startT);
+        const angle = (b / branchCount) * Math.PI * 2 + rand();
+        const bLen = height * (0.22 + rand() * 0.16);
+
+        const bEnd = new THREE.Vector3(
+            startPt.x + Math.cos(angle) * bLen,
+            startPt.y + bLen * 0.85,
+            startPt.z + Math.sin(angle) * bLen
+        );
+        const bMid = startPt.clone().lerp(bEnd, 0.5);
+        bMid.y += bLen * 0.1;
+
+        const bCurve = new THREE.CatmullRomCurve3([startPt, bMid, bEnd]);
+        woodParts.push(new THREE.TubeGeometry(bCurve, cfg.branchTubular, baseRadius * 0.28, cfg.branchRadial, false));
+
+        // Кластер листвы: сплющенный икосаэдр у конца ветви
+        const r = height * 0.108;
+        const blob = new THREE.IcosahedronGeometry(r, cfg.blobDetail);
+        blob.scale(1.3, 0.65, 1.3);
+        blob.translate(bEnd.x, bEnd.y, bEnd.z);
+        blob.computeVertexNormals();
+        leafParts.push(blob);
+    }
+
+    return {
+        wood: mergeTreeParts(woodParts),
+        leaves: mergeTreeParts(leafParts),
+        height
+    };
+}
+
+// Три варианта бука: взрослый, средний и молодой
+const TREE_VARIANTS = (() => {
+    const vrand = mulberry32(31337);
+    return [
+        createBeechVariant(vrand, { heightMin: 15, heightMax: 62, radiusScale: 4.0, trunkTubular: 7, trunkRadial: 5, branchMin: 3, branchRange: 2, branchTubular: 3, branchRadial: 4, blobDetail: 0 }),
+        createBeechVariant(vrand, { heightMin: 10, heightMax: 35, radiusScale: 2.5, trunkTubular: 6, trunkRadial: 5, branchMin: 2, branchRange: 2, branchTubular: 3, branchRadial: 4, blobDetail: 0 }),
+        createBeechVariant(vrand, { heightMin: 6,  heightMax: 20, radiusScale: 1.8, trunkTubular: 5, trunkRadial: 4, branchMin: 2, branchRange: 1, branchTubular: 3, branchRadial: 3, blobDetail: 0 })
     ];
+})();
 
-    const positions = [];
-    const normals = [];
-
-    blobs.forEach((b, idx) => {
-        const geo = new THREE.IcosahedronGeometry(b.r, 0);
-        geo.scale(b.sx, b.sy, b.sz);
-        geo.rotateY(idx * 1.1);
-        geo.translate(b.x, b.y, b.z);
-        geo.computeVertexNormals();
-
-        const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
-        positions.push(...nonIndexed.attributes.position.array);
-        normals.push(...nonIndexed.attributes.normal.array);
-    });
-
-    const merged = new THREE.BufferGeometry();
-    merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    return merged;
-}
-
-function createBroadleafTrunkGeometry() {
-    const parts = [
-        { rTop: 0.45, rBot: 0.90, h: 5.5, x:  0.0, y: 2.2, z:  0.0, rx:  0.0,  rz:  0.0  },
-        { rTop: 0.20, rBot: 0.40, h: 3.4, x: -0.9, y: 5.4, z:  0.4, rx:  0.2,  rz:  0.45 },
-        { rTop: 0.20, rBot: 0.40, h: 3.4, x:  1.0, y: 5.5, z: -0.4, rx: -0.2,  rz: -0.45 }
-    ];
-
-    const positions = [];
-    const normals = [];
-
-    parts.forEach(p => {
-        const cyl = new THREE.CylinderGeometry(p.rTop, p.rBot, p.h, 5);
-        cyl.rotateX(p.rx);
-        cyl.rotateZ(p.rz);
-        cyl.translate(p.x, p.y, p.z);
-        cyl.computeVertexNormals();
-
-        const nonIndexed = cyl.index ? cyl.toNonIndexed() : cyl;
-        positions.push(...nonIndexed.attributes.position.array);
-        normals.push(...nonIndexed.attributes.normal.array);
-    });
-
-    const merged = new THREE.BufferGeometry();
-    merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    return merged;
-}
-
-const treeGeo     = createPineGeometry();
-const trunkGeo    = new THREE.CylinderGeometry(0.25, 0.65, 6, 5);
-const oakCrownGeo = createBroadleafCrownGeometry();
-const oakTrunkGeo = createBroadleafTrunkGeometry();
+const bushGeo = new THREE.IcosahedronGeometry(1, 0);
 
 //===== END/==== Создание дерева =============
 
@@ -534,13 +654,18 @@ const hfParams = {
     strength: FOG_DENSITY
 };
 
+// Туман сцены three.js накладывает уже после tonemapping и в выходном (sRGB) пространстве,
+// а высотный туман дописывается после него — поэтому его цвет переводим туда же,
+// иначе он выглядел бы темнее общей дымки.
+const HFOG_COLOR_OUTPUT = scene.fog.color.clone().convertLinearToSRGB();
+
 function applyHeightFog(material) {
     if (!material) return;
     material.onBeforeCompile = (shader) => {
         shader.uniforms.uFogMid      = { value: hfParams.mid };
         shader.uniforms.uFogRange    = { value: hfParams.range };
         shader.uniforms.uFogStrength = { value: hfParams.strength };
-        shader.uniforms.uHFogColor   = { value: scene.fog.color };
+        shader.uniforms.uHFogColor   = { value: HFOG_COLOR_OUTPUT };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -1193,12 +1318,16 @@ const forestState = {
     built: false,
     appliedRadius: Infinity,
     lastX: NaN, lastZ: NaN,
-    pines: null, trunks: null, oaks: null, oakTrunks: null,
-    pineCrownM: null, pineTrunkM: null, pineCols: null,
-    oakM: null, oakCols: null,
-    pineCellStart: null, pineCellList: null,
-    oakCellStart: null, oakCellList: null,
-    pineTotal: 0, oakTotal: 0
+    variants: [],        // [{ wood: InstancedMesh, leaves: InstancedMesh }]
+    bushes: null,        // InstancedMesh | null
+    total: 0,
+    matrices: null,      // Float32Array total*16 — матрица дерева
+    colors: null,        // Float32Array total*3  — цвет листвы
+    variantOf: null,     // Int32Array total      — индекс варианта
+    bushMatrices: null,  // Float32Array total*16 — для деревьев с подлеском
+    bushOf: null,        // Uint8Array total
+    cellStart: null,
+    cellList: null
 };
 
 function forestCellOf(x, z) {
@@ -1212,19 +1341,45 @@ function rebuildForestInstances(camX, camZ) {
     const s = forestState;
     if (!s.built) return;
 
-    const pineCrownDst = s.pines.instanceMatrix.array;
-    const pineTrunkDst = s.trunks.instanceMatrix.array;
-    const pineColorDst = s.pines.instanceColor.array;
-    const oakDst       = s.oaks.instanceMatrix.array;
-    const oakTrunkDst  = s.oakTrunks.instanceMatrix.array;
-    const oakColorDst  = s.oaks.instanceColor.array;
+    const variantCount = s.variants.length;
+    const counts = new Int32Array(variantCount);
+    let bushCount = 0;
 
-    let pineCount = 0;
-    let oakCount = 0;
+    const woodArrays = s.variants.map(v => v.wood.instanceMatrix.array);
+    const leafArrays = s.variants.map(v => v.leaves.instanceMatrix.array);
+    const leafColorArrays = s.variants.map(v => v.leaves.instanceColor.array);
+    const bushArray = s.bushes ? s.bushes.instanceMatrix.array : null;
+
+    function copyTree(i) {
+        const variant = s.variantOf[i];
+        const src = i * 16;
+        const dst = counts[variant] * 16;
+
+        const woodArr = woodArrays[variant];
+        const leafArr = leafArrays[variant];
+        for (let j = 0; j < 16; j++) {
+            woodArr[dst + j] = s.matrices[src + j];
+            leafArr[dst + j] = s.matrices[src + j];
+        }
+
+        const leafCol = leafColorArrays[variant];
+        const sc = i * 3;
+        const dc = counts[variant] * 3;
+        leafCol[dc]     = s.colors[sc];
+        leafCol[dc + 1] = s.colors[sc + 1];
+        leafCol[dc + 2] = s.colors[sc + 2];
+
+        counts[variant]++;
+
+        if (bushArray && s.bushOf[i]) {
+            const bdst = bushCount * 16;
+            for (let j = 0; j < 16; j++) bushArray[bdst + j] = s.bushMatrices[src + j];
+            bushCount++;
+        }
+    }
 
     if (forestDrawRadiusM === Infinity) {
-        pineCount = s.pineTotal;
-        oakCount = s.oakTotal;
+        for (let i = 0; i < s.total; i++) copyTree(i);
     } else {
         const radius = forestDrawRadiusM;
         const radiusSq = radius * radius;
@@ -1232,9 +1387,8 @@ function rebuildForestInstances(camX, camZ) {
         const cellReachSq = (radius + FOREST_CELL_SIZE_M) * (radius + FOREST_CELL_SIZE_M);
 
         for (let c = 0; c < cells; c++) {
-            const p0 = s.pineCellStart[c], p1 = s.pineCellStart[c + 1];
-            const o0 = s.oakCellStart[c],  o1 = s.oakCellStart[c + 1];
-            if (p0 === p1 && o0 === o1) continue;
+            const p0 = s.cellStart[c], p1 = s.cellStart[c + 1];
+            if (p0 === p1) continue;
 
             const cellX = (c % FOREST_CELL_COLS + 0.5) * FOREST_CELL_SIZE_M - HALF_WORLD_M;
             const cellZ = (Math.floor(c / FOREST_CELL_COLS) + 0.5) * FOREST_CELL_SIZE_M - HALF_WORLD_M;
@@ -1242,56 +1396,29 @@ function rebuildForestInstances(camX, camZ) {
             if (cdx * cdx + cdz * cdz > cellReachSq) continue;
 
             for (let k = p0; k < p1; k++) {
-                const i = s.pineCellList[k];
+                const i = s.cellList[k];
                 const src = i * 16;
-                const dx = camX - s.pineCrownM[src + 12];
-                const dz = camZ - s.pineCrownM[src + 14];
+                const dx = camX - s.matrices[src + 12];
+                const dz = camZ - s.matrices[src + 14];
                 if (dx * dx + dz * dz > radiusSq) continue;
-
-                const dst = pineCount * 16;
-                for (let j = 0; j < 16; j++) {
-                    pineCrownDst[dst + j] = s.pineCrownM[src + j];
-                    pineTrunkDst[dst + j] = s.pineTrunkM[src + j];
-                }
-                const sc = i * 3, dc = pineCount * 3;
-                pineColorDst[dc]     = s.pineCols[sc];
-                pineColorDst[dc + 1] = s.pineCols[sc + 1];
-                pineColorDst[dc + 2] = s.pineCols[sc + 2];
-                pineCount++;
-            }
-
-            for (let k = o0; k < o1; k++) {
-                const i = s.oakCellList[k];
-                const src = i * 16;
-                const dx = camX - s.oakM[src + 12];
-                const dz = camZ - s.oakM[src + 14];
-                if (dx * dx + dz * dz > radiusSq) continue;
-
-                const dst = oakCount * 16;
-                for (let j = 0; j < 16; j++) {
-                    oakDst[dst + j]      = s.oakM[src + j];
-                    oakTrunkDst[dst + j] = s.oakM[src + j];
-                }
-                const sc = i * 3, dc = oakCount * 3;
-                oakColorDst[dc]     = s.oakCols[sc];
-                oakColorDst[dc + 1] = s.oakCols[sc + 1];
-                oakColorDst[dc + 2] = s.oakCols[sc + 2];
-                oakCount++;
+                copyTree(i);
             }
         }
     }
 
-    s.pines.count     = pineCount;
-    s.trunks.count    = pineCount;
-    s.oaks.count      = oakCount;
-    s.oakTrunks.count = oakCount;
+    for (let v = 0; v < variantCount; v++) {
+        const pair = s.variants[v];
+        pair.wood.count = counts[v];
+        pair.leaves.count = counts[v];
+        pair.wood.instanceMatrix.needsUpdate = true;
+        pair.leaves.instanceMatrix.needsUpdate = true;
+        pair.leaves.instanceColor.needsUpdate = true;
+    }
 
-    s.pines.instanceMatrix.needsUpdate     = true;
-    s.trunks.instanceMatrix.needsUpdate    = true;
-    s.oaks.instanceMatrix.needsUpdate      = true;
-    s.oakTrunks.instanceMatrix.needsUpdate = true;
-    s.pines.instanceColor.needsUpdate = true;
-    s.oaks.instanceColor.needsUpdate  = true;
+    if (s.bushes) {
+        s.bushes.count = bushCount;
+        s.bushes.instanceMatrix.needsUpdate = true;
+    }
 
     s.appliedRadius = forestDrawRadiusM;
     s.lastX = camX;
@@ -1327,7 +1454,7 @@ function loadMapObjects() {
     const mapSize = window.MAP_OBJECTS.mapSize || 512;
     const objects = window.MAP_OBJECTS.objects;
 
-    const DENSITY_MULTIPLIER = 2; // Оптимально для FPS на горе Бештау
+    const DENSITY_MULTIPLIER = 2; // Плотность леса. 2 - Оптимально для FPS на горе Бештау
 
     // Источник деревьев: маска леса (новый формат) или старые точки в map_objects.js
     const forestCells = (window.FOREST_DATA && typeof window.FOREST_DATA.cells === 'string')
@@ -1341,14 +1468,14 @@ function loadMapObjects() {
 
     treeMat.color.setHex(0xffffff);
 
-    // Инстансы собираем в типизированные массивы, а по чанкам раскладываем ниже
-    const pineCrownM  = new Float32Array(maxTrees * 16);
-    const pineTrunkM  = new Float32Array(maxTrees * 16);
-    const pineCols    = new Float32Array(maxTrees * 3);
-    const oakM        = new Float32Array(maxTrees * 16);
-    const oakCols     = new Float32Array(maxTrees * 3);
-    const pineCellOf  = new Int32Array(maxTrees);
-    const oakCellOf   = new Int32Array(maxTrees);
+    // Матрицы деревьев собираем в типизированные массивы, а по чанкам раскладываем ниже
+    const treeMatrices = new Float32Array(maxTrees * 16);
+    const treeColors   = new Float32Array(maxTrees * 3);
+    const treeVariant  = new Int32Array(maxTrees);
+    const treeCellOf   = new Int32Array(maxTrees);
+    const bushMatrices = new Float32Array(maxTrees * 16);
+    const bushOf       = new Uint8Array(maxTrees);
+    const variantTotals = new Int32Array(TREE_VARIANTS.length);
 
     const ruins     = new THREE.InstancedMesh(ruinGeo,     ruinMat,  ruinCount);
 
@@ -1356,7 +1483,7 @@ function loadMapObjects() {
     const color = new THREE.Color();
     const cellMeters = TERRAIN_SIZE_M / mapSize;
 
-    let pineIdx = 0, oakIdx = 0, rIdx = 0;
+    let treeIdx = 0, bushTotal = 0, rIdx = 0;
 
     // 1. Сначала строим дороги и штольни, запоминаем их координаты
     allRoadPoints.length = 0;
@@ -1399,61 +1526,64 @@ function loadMapObjects() {
             const tx = wx + Math.cos(angle) * radius;
             const tz = wz + Math.sin(angle) * radius;
 
-            // Пропускаем дерево, если оно на дороге (6.5 м) или у входа в штольню (12 м)
-            if (isNearRoad(tx, tz, 6.5) || isNearAdit(tx, tz, 12.0)) continue;
+            // Пропускаем дерево, если оно на дороге (30 м) или у входа в штольню (50 м)
+            if (isNearRoad(tx, tz, 30) || isNearAdit(tx, tz, 50.0)) continue;
 
             const ty = getActualTerrainHeight(tx, tz);
 
-            const tiltX = (rand() - 0.5) * 0.08;
-            const tiltZ = (rand() - 0.5) * 0.08;
+            if (treeIdx >= maxTrees) continue;
+
+            const tiltX = (rand() - 0.5) * 0.05;
+            const tiltZ = (rand() - 0.5) * 0.05;
             const rotY  = rand() * Math.PI * 2;
 
-            // На Бештау у подножия (ниже 45м) растут дубы/буки, выше — сосны/ели
-            const isOak = (ty < 45) ? (rand() < 0.6) : (rand() < 0.15);
+            // У подножия (ниже 500 м) больше взрослых буков, выше — молодняк
+            const rv = rand();
+            const variant = (ty < 500)
+                ? (rv < 0.55 ? 0 : (rv < 0.9 ? 1 : 2))
+                : (rv < 0.28 ? 0 : (rv < 0.72 ? 1 : 2));
 
-            if (isOak && oakIdx < maxTrees) {
-                const scaleY  = 0.75 + rand() * 0.65;
-                const scaleXZ = scaleY * (0.95 + rand() * 0.45);
+            const scaleY  = 0.8 + rand() * 0.45;
+            const scaleXZ = scaleY * (0.85 + rand() * 0.3);
 
-                dummy.position.set(tx, ty, tz);
-                dummy.rotation.set(tiltX * 0.5, rotY, tiltZ * 0.5);
-                dummy.scale.set(scaleXZ, scaleY, scaleXZ);
+            dummy.position.set(tx, ty - 0.15, tz);
+            dummy.rotation.set(tiltX, rotY, tiltZ);
+            dummy.scale.set(scaleXZ, scaleY, scaleXZ);
+            dummy.updateMatrix();
+            dummy.matrix.toArray(treeMatrices, treeIdx * 16);
+
+            // Цвет листвы с вариациями вокруг базового 0x3b592c из temp/forest.html
+            color.setHex(0x3b592c);
+            color.offsetHSL((rand() - 0.5) * 0.06, (rand() - 0.5) * 0.18, (rand() - 0.5) * 0.14);
+            treeColors[treeIdx * 3]     = color.r;
+            treeColors[treeIdx * 3 + 1] = color.g;
+            treeColors[treeIdx * 3 + 2] = color.b;
+
+            treeVariant[treeIdx] = variant;
+            variantTotals[variant]++;
+            treeCellOf[treeIdx] = forestCellOf(tx, tz);
+
+            // Подлесок у части деревьев — как кусты в temp/forest.html
+            if (rand() < 0.3) {
+                const bs = 0.9 + rand() * 0.7;
+                dummy.position.set(
+                    tx + (rand() - 0.5) * 1.8,
+                    ty + 0.6 * bs,
+                    tz + (rand() - 0.5) * 1.8
+                );
+                dummy.rotation.set(0, rand() * Math.PI * 2, 0);
+                dummy.scale.set(bs, bs * 0.65, bs);
                 dummy.updateMatrix();
-
-                dummy.matrix.toArray(oakM, oakIdx * 16);
-
-                color.setHSL(0.20 + rand() * 0.09, 0.45 + rand() * 0.25, 0.12 + rand() * 0.12);
-                oakCols[oakIdx * 3]     = color.r;
-                oakCols[oakIdx * 3 + 1] = color.g;
-                oakCols[oakIdx * 3 + 2] = color.b;
-                oakCellOf[oakIdx] = forestCellOf(tx, tz);
-                oakIdx++;
-            } else if (pineIdx < maxTrees) {
-                const scaleY  = 0.7 + rand() * 0.9;
-                const scaleXZ = scaleY * (0.75 + rand() * 0.5);
-
-                dummy.position.set(tx, ty, tz);
-                dummy.rotation.set(tiltX, rotY, tiltZ);
-                dummy.scale.set(scaleXZ, scaleY, scaleXZ);
-                dummy.updateMatrix();
-
-                dummy.matrix.toArray(pineCrownM, pineIdx * 16);
-
-                dummy.position.set(tx, ty + 2.0 * scaleY, tz);
-                dummy.updateMatrix();
-                dummy.matrix.toArray(pineTrunkM, pineIdx * 16);
-
-                color.setHSL(0.26 + rand() * 0.11, 0.45 + rand() * 0.30, 0.08 + rand() * 0.12);
-                pineCols[pineIdx * 3]     = color.r;
-                pineCols[pineIdx * 3 + 1] = color.g;
-                pineCols[pineIdx * 3 + 2] = color.b;
-                pineCellOf[pineIdx] = forestCellOf(tx, tz);
-                pineIdx++;
+                dummy.matrix.toArray(bushMatrices, treeIdx * 16);
+                bushOf[treeIdx] = 1;
+                bushTotal++;
             }
+
+            treeIdx++;
         }
     }
 
-    console.log(`[Forest] ${treeSources.length} ячеек → ${pineIdx + oakIdx} деревьев за ${(performance.now() - forestStart).toFixed(1)} мс`);
+    console.log(`[Forest] ${treeSources.length} ячеек → ${treeIdx} деревьев и ${bushTotal} кустов за ${(performance.now() - forestStart).toFixed(1)} мс`);
 
     // 3. Руины
     objects.forEach(obj => {
@@ -1480,42 +1610,29 @@ function loadMapObjects() {
         }
     });
 
-    // 3. Меши леса + корзины деревьев для выборки по радиусу
-    const trees     = new THREE.InstancedMesh(treeGeo,     treeMat,  Math.max(1, pineIdx));
-    const trunks    = new THREE.InstancedMesh(trunkGeo,    trunkMat, Math.max(1, pineIdx));
-    const oaks      = new THREE.InstancedMesh(oakCrownGeo, treeMat,  Math.max(1, oakIdx));
-    const oakTrunks = new THREE.InstancedMesh(oakTrunkGeo, trunkMat, Math.max(1, oakIdx));
+    // 3. Меши леса по вариантам + корзины деревьев для выборки по радиусу
+    const forestMeshes = TREE_VARIANTS.map((variantGeo, v) => {
+        const count = Math.max(1, variantTotals[v]);
 
-    const instMatrix = new THREE.Matrix4();
-    const instColor  = new THREE.Color();
+        const wood   = new THREE.InstancedMesh(variantGeo.wood,   trunkMat, count);
+        const leaves = new THREE.InstancedMesh(variantGeo.leaves, treeMat,  count);
 
-    for (let i = 0; i < pineIdx; i++) {
-        instMatrix.fromArray(pineCrownM, i * 16);
-        trees.setMatrixAt(i, instMatrix);
-        instMatrix.fromArray(pineTrunkM, i * 16);
-        trunks.setMatrixAt(i, instMatrix);
-        instColor.fromArray(pineCols, i * 3);
-        trees.setColorAt(i, instColor);
-    }
-    for (let i = 0; i < oakIdx; i++) {
-        instMatrix.fromArray(oakM, i * 16);
-        oaks.setMatrixAt(i, instMatrix);
-        oakTrunks.setMatrixAt(i, instMatrix);
-        instColor.fromArray(oakCols, i * 3);
-        oaks.setColorAt(i, instColor);
-    }
+        wood.castShadow = true;
+        wood.receiveShadow = true;
+        leaves.castShadow = true;
+        leaves.receiveShadow = true;
 
-    trees.count = pineIdx;
-    trunks.count = pineIdx;
-    oaks.count = oakIdx;
-    oakTrunks.count = oakIdx;
+        // Выделяем буфер инстанс-цветов: значения заполнит rebuildForestInstances
+        const white = new THREE.Color(0xffffff);
+        for (let i = 0; i < count; i++) leaves.setColorAt(i, white);
 
-    trees.instanceMatrix.needsUpdate = true;
-    trunks.instanceMatrix.needsUpdate = true;
-    oaks.instanceMatrix.needsUpdate = true;
-    oakTrunks.instanceMatrix.needsUpdate = true;
-    if (trees.instanceColor) trees.instanceColor.needsUpdate = true;
-    if (oaks.instanceColor)  oaks.instanceColor.needsUpdate = true;
+        return { wood, leaves };
+    });
+
+    const bushes = new THREE.InstancedMesh(bushGeo, bushMat, Math.max(1, bushTotal));
+    bushes.castShadow = true;
+    bushes.receiveShadow = true;
+    bushes.count = 0;
 
     // Корзины 500 м: стартовые индексы и список деревьев в каждой
     function buildForestCells(indexOf, total) {
@@ -1529,38 +1646,31 @@ function loadMapObjects() {
         return { starts, list };
     }
 
-    const pineCells = buildForestCells(pineCellOf, pineIdx);
-    const oakCells  = buildForestCells(oakCellOf, oakIdx);
+    const treeCells = buildForestCells(treeCellOf, treeIdx);
 
-    forestState.pines = trees;
-    forestState.trunks = trunks;
-    forestState.oaks = oaks;
-    forestState.oakTrunks = oakTrunks;
-    forestState.pineCrownM = pineCrownM;
-    forestState.pineTrunkM = pineTrunkM;
-    forestState.pineCols = pineCols;
-    forestState.oakM = oakM;
-    forestState.oakCols = oakCols;
-    forestState.pineCellStart = pineCells.starts;
-    forestState.pineCellList = pineCells.list;
-    forestState.oakCellStart = oakCells.starts;
-    forestState.oakCellList = oakCells.list;
-    forestState.pineTotal = pineIdx;
-    forestState.oakTotal = oakIdx;
+    forestState.variants = forestMeshes;
+    forestState.bushes = bushes;
+    forestState.total = treeIdx;
+    forestState.matrices = treeMatrices;
+    forestState.colors = treeColors;
+    forestState.variantOf = treeVariant;
+    forestState.bushMatrices = bushMatrices;
+    forestState.bushOf = bushOf;
+    forestState.cellStart = treeCells.starts;
+    forestState.cellList = treeCells.list;
     forestState.appliedRadius = Infinity;
     forestState.lastX = NaN;
     forestState.lastZ = NaN;
     forestState.built = true;
 
-    trees.castShadow = true;  trees.receiveShadow = true;
-    trunks.castShadow = true;
-    oaks.castShadow = true;   oaks.receiveShadow = true;
-    oakTrunks.castShadow = true;
+    forestMeshes.forEach(pair => {
+        scene.add(pair.wood);
+        scene.add(pair.leaves);
+    });
+    scene.add(bushes);
 
-    scene.add(trees);
-    scene.add(trunks);
-    scene.add(oaks);
-    scene.add(oakTrunks);
+    // Первичная раскладка видимого набора
+    rebuildForestInstances(camera.position.x, camera.position.z);
 
     ruins.castShadow = true;  ruins.receiveShadow = true;
     scene.add(ruins);
@@ -1675,7 +1785,9 @@ function playGeigerClick() {
     osc.start(); osc.stop(audioCtx.currentTime + 0.03);
 }
 
-document.body.addEventListener('click', () => {
+document.body.addEventListener('click', (event) => {
+    // Клики по панели настроек не должны захватывать указатель
+    if (event.target && event.target.closest && event.target.closest('#renderPanel')) return;
     controls.lock();
     initAudio();
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
@@ -1699,6 +1811,7 @@ const GRAVITY       = 25;
 const JUMP_VELOCITY = 20;
 
 document.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return; // слайдеры забирают стрелки себе
     switch (e.code) {
         case 'KeyW': moveState.forward  = true; break;
         case 'KeyS': moveState.backward = true; break;
@@ -1709,6 +1822,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 document.addEventListener('keyup', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return;
     switch (e.code) {
         case 'KeyW': moveState.forward  = false; break;
         case 'KeyS': moveState.backward = false; break;
@@ -1929,6 +2043,27 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ============================================================
+// 12.5. ПАНЕЛЬ АТМОСФЕРЫ (как в образце)
+// ============================================================
+const fogDensityRange = document.getElementById('fogDensityRange');
+const fogDensityVal   = document.getElementById('fogDensityVal');
+const skyLightRange   = document.getElementById('skyLightRange');
+const skyLightVal     = document.getElementById('skyLightVal');
+
+fogDensityRange.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    scene.fog.density = v;
+    fogDensityVal.textContent = v.toFixed(5);
+});
+
+skyLightRange.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    hemiLight.intensity = v;
+    dirLight.intensity  = v * 0.85; // солнце держит пропорцию из образца
+    skyLightVal.textContent = v.toFixed(2);
 });
 
 // ============================================================

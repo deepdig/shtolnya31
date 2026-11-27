@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Туманный буковый лес — Three.js</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background-color: #b8c4c8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    canvas {
+      display: block;
+      touch-action: none;   /* чтобы драг на телефоне не скроллил страницу */
+      cursor: grab;
+    }
+    canvas.dragging { cursor: grabbing; }
+
+    #ui {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      background: rgba(20, 26, 24, 0.75);
+      color: #eef2f0;
+      padding: 14px 18px;
+      border-radius: 10px;
+      backdrop-filter: blur(6px);
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 260px;
+      user-select: none;
+    }
+    #ui h3 {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .control {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .control label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: #cfd8d4;
+    }
+    input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+  </style>
+
+  <!-- ИСПРАВЛЕНИЕ №1: в importmap нужны ПОЛНЫЕ ссылки на модули, а не просто домен -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="ui">
+    <h3>Туманный буковый лес</h3>
+    <div><b>Управление:</b> зажмите ЛКМ для осмотра, <b>WASD / Стрелки</b> — ходьба.</div>
+    <div class="control">
+      <label>Плотность тумана <span id="fogVal">0.032</span></label>
+      <input id="fogDensity" type="range" min="0.01" max="0.07" step="0.002" value="0.032" />
+    </div>
+    <div class="control">
+      <label>Яркость неба <span id="lightVal">1.1</span></label>
+      <input id="lightIntensity" type="range" min="0.4" max="2.0" step="0.1" value="1.1" />
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // --- 1. СЦЕНА, КАМЕРА И РЕНДЕРЕР ---
+    const scene = new THREE.Scene();
+    const fogColor = new THREE.Color(0xc2cdd0);
+    scene.background = fogColor;
+    scene.fog = new THREE.FogExp2(fogColor, 0.032);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 2.2, 12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.95;
+    document.body.appendChild(renderer.domElement);
+    const canvas = renderer.domElement;
+
+    // --- 2. ОСВЕЩЕНИЕ ---
+    const hemiLight = new THREE.HemisphereLight(0xdbe6ea, 0x3b2d22, 1.1);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xeef5f7, 0.9);
+    dirLight.position.set(15, 45, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 120;
+    const d = 40;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.bias = -0.0005;
+    dirLight.shadow.normalBias = 0.02;
+    scene.add(dirLight);
+    // ИСПРАВЛЕНИЕ: цель света добавляем в сцену, чтобы её можно было двигать за камерой
+    scene.add(dirLight.target);
+
+    // --- 3. ПРОЦЕДУРНЫЕ ТЕКСТУРЫ ---
+    function createGroundTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 512;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#3c2a1e';
+      ctx.fillRect(0, 0, 512, 512);
+
+      const colors = ['#593822', '#6e4528', '#2f2117', '#4a321f', '#354227', '#27331d'];
+      for (let i = 0; i < 14000; i++) {
+        ctx.fillStyle = colors[(Math.random() * colors.length) | 0];
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const w = 2 + Math.random() * 5;
+        const h = 1.5 + Math.random() * 3.5;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(Math.random() * Math.PI);
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(28, 28);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      return tex;
+    }
+
+    function createBarkTexture() {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#686b68';
+      ctx.fillRect(0, 0, 256, 512);
+
+      for (let i = 0; i < 2500; i++) {
+        const shade = 75 + ((Math.random() * 45) | 0);
+        const greenTint = Math.random() > 0.75 ? 12 : 0;
+        ctx.fillStyle = `rgb(${shade}, ${shade + greenTint}, ${shade - 2})`;
+        ctx.fillRect(
+          Math.random() * 256,
+          Math.random() * 512,
+          6 + Math.random() * 24,
+          1 + Math.random() * 3
+        );
+      }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(2, 6);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      return tex;
+    }
+
+    // --- 4. РЕЛЬЕФ ЗЕМЛИ ---
+    const WORLD_SIZE = 160;
+    const WORLD_LIMIT = WORLD_SIZE / 2 - 8; // граница, за которую нельзя уходить
+
+    function getTerrainHeight(x, z) {
+      return (
+        Math.sin(x * 0.08) * Math.cos(z * 0.08) * 1.6 +
+        Math.sin(x * 0.22 + z * 0.15) * 0.45
+      );
+    }
+
+    const groundGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 128, 128);
+    groundGeo.rotateX(-Math.PI / 2);
+    const pos = groundGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setY(i, getTerrainHeight(pos.getX(i), pos.getZ(i)));
+    }
+    groundGeo.computeVertexNormals();
+
+    const groundMat = new THREE.MeshStandardMaterial({
+      map: createGroundTexture(),
+      roughness: 0.92,
+      metalness: 0.02
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // --- 5. ДЕРЕВЬЯ ---
+    const barkMat = new THREE.MeshStandardMaterial({
+      map: createBarkTexture(),
+      roughness: 0.85,
+      metalness: 0.05
+    });
+
+    const leafMat = new THREE.MeshStandardMaterial({
+      color: 0x3b592c,
+      roughness: 0.75,
+      side: THREE.DoubleSide
+    });
+
+    // ИСПРАВЛЕНИЕ: общие геометрии вместо создания новой на каждую ветку/куст
+    const foliageGeo = new THREE.IcosahedronGeometry(1, 1);
+    const bushGeo = new THREE.IcosahedronGeometry(1, 1);
+
+    const foliageMeshes = [];
+    const colliders = []; // стволы для столкновений
+
+    function createBeechTree(x, z, scale = 1) {
+      const treeGroup = new THREE.Group();
+      const baseY = getTerrainHeight(x, z);
+      treeGroup.position.set(x, baseY - 0.15, z);
+
+      const height = (15 + Math.random() * 7) * scale;
+      const baseRadius = (0.32 + Math.random() * 0.22) * scale;
+
+      // Изогнутый ствол
+      const points = [];
+      const segments = 6;
+      const leanX = (Math.random() - 0.5) * 1.8;
+      const leanZ = (Math.random() - 0.5) * 1.8;
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const curX = Math.sin(t * Math.PI * 1.4) * 0.45 + leanX * t;
+        const curZ = Math.cos(t * Math.PI * 1.1) * 0.35 + leanZ * t;
+        points.push(new THREE.Vector3(curX, t * height, curZ));
+      }
+
+      const curve = new THREE.CatmullRomCurve3(points);
+      const trunkGeo = new THREE.TubeGeometry(curve, 24, baseRadius, 12, false);
+
+      // Сужение ствола к вершине и расширение у корней
+      const tPos = trunkGeo.attributes.position;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < tPos.count; i++) {
+        v.fromBufferAttribute(tPos, i);
+        const hRatio = THREE.MathUtils.clamp(v.y / height, 0, 1);
+        const center = curve.getPoint(hRatio);
+        const flare = hRatio < 0.12 ? 1 + Math.pow((0.12 - hRatio) / 0.12, 2) * 0.85 : 1;
+        const taper = (1 - hRatio * 0.68) * flare;
+
+        v.x = center.x + (v.x - center.x) * taper;
+        v.z = center.z + (v.z - center.z) * taper;
+        tPos.setXYZ(i, v.x, v.y, v.z);
+      }
+      trunkGeo.computeVertexNormals();
+
+      const trunk = new THREE.Mesh(trunkGeo, barkMat);
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      treeGroup.add(trunk);
+
+      // Ветви и крона
+      const branchCount = 3 + Math.floor(Math.random() * 3);
+      for (let b = 0; b < branchCount; b++) {
+        const startT = 0.58 + (b / branchCount) * 0.35;
+        const startPt = curve.getPoint(startT);
+        const angle = (b / branchCount) * Math.PI * 2 + Math.random();
+        const bLen = (3.5 + Math.random() * 3) * scale;
+
+        const bEnd = new THREE.Vector3(
+          startPt.x + Math.cos(angle) * bLen,
+          startPt.y + bLen * 0.85,
+          startPt.z + Math.sin(angle) * bLen
+        );
+        const bMid = startPt.clone().lerp(bEnd, 0.5);
+        bMid.y += 0.4;
+
+        const bCurve = new THREE.CatmullRomCurve3([startPt, bMid, bEnd]);
+        const bGeo = new THREE.TubeGeometry(bCurve, 8, baseRadius * 0.28, 7, false);
+        const branch = new THREE.Mesh(bGeo, barkMat);
+        branch.castShadow = true;
+        branch.receiveShadow = true;
+        treeGroup.add(branch);
+
+        // Кластер листвы (общая единичная геометрия + масштаб)
+        const r = 1.8 * scale;
+        const leafCluster = new THREE.Mesh(foliageGeo, leafMat);
+        leafCluster.position.copy(bEnd);
+        leafCluster.scale.set(r * 1.3, r * 0.65, r * 1.3);
+        leafCluster.receiveShadow = true;
+        treeGroup.add(leafCluster);
+        foliageMeshes.push(leafCluster);
+      }
+
+      // Подлесок
+      if (Math.random() > 0.55) {
+        const bush = new THREE.Mesh(bushGeo, leafMat);
+        bush.position.set((Math.random() - 0.5) * 1.4, 0.6, (Math.random() - 0.5) * 1.4);
+        bush.scale.set(0.9, 0.6, 0.9);
+        bush.receiveShadow = true;
+        treeGroup.add(bush);
+      }
+
+      scene.add(treeGroup);
+
+      // ИСПРАВЛЕНИЕ: запоминаем ствол как препятствие
+      colliders.push({ x, z, r: baseRadius + 0.55 });
+    }
+
+    // Расстановка деревьев, оставляя тропинку в центре
+    for (let i = 0; i < 160; i++) {
+      const x = (Math.random() - 0.5) * 110;
+      const z = (Math.random() - 0.5) * 110;
+      if (Math.abs(x) < 2.2 && z > -5 && z < 16) continue;
+      createBeechTree(x, z, 0.8 + Math.random() * 0.55);
+    }
+
+    // --- 6. УПРАВЛЕНИЕ ---
+    const keys = Object.create(null);
+    let yaw = 0;
+    let pitch = 0.04;
+    let dragging = false;
+    let dragPointerId = null;
+    const prevMouse = { x: 0, y: 0 };
+
+    // ИСПРАВЛЕНИЕ: не перехватываем клавиши, когда фокус в слайдере
+    window.addEventListener('keydown', (e) => {
+      if (e.target && e.target.tagName === 'INPUT') return;
+      if (e.code.startsWith('Arrow')) e.preventDefault();
+      keys[e.code] = true;
+    });
+    window.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
+    // ИСПРАВЛЕНИЕ: при потере фокуса окна клавиши "залипали" и камера ехала сама
+    window.addEventListener('blur', () => {
+      for (const k in keys) keys[k] = false;
+      dragging = false;
+      dragPointerId = null;
+      canvas.classList.remove('dragging');
+    });
+
+    // ИСПРАВЛЕНИЕ: Pointer Events + захват указателя (работает и мышью, и пальцем)
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      dragging = true;
+      dragPointerId = e.pointerId;
+      prevMouse.x = e.clientX;
+      prevMouse.y = e.clientY;
+      canvas.classList.add('dragging');
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragging || e.pointerId !== dragPointerId) return;
+      const dx = e.clientX - prevMouse.x;
+      const dy = e.clientY - prevMouse.y;
+      prevMouse.x = e.clientX;
+      prevMouse.y = e.clientY;
+      yaw -= dx * 0.004;
+      pitch = THREE.MathUtils.clamp(pitch - dy * 0.004, -0.8, 0.8);
+    });
+
+    function endDrag(e) {
+      if (e && e.pointerId !== dragPointerId) return;
+      dragging = false;
+      dragPointerId = null;
+      canvas.classList.remove('dragging');
+    }
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('lostpointercapture', endDrag);
+
+    // --- 7. UI ---
+    const fogSlider = document.getElementById('fogDensity');
+    const fogVal = document.getElementById('fogVal');
+    fogSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      scene.fog.density = v;
+      fogVal.textContent = v.toFixed(3);
+    });
+
+    const lightSlider = document.getElementById('lightIntensity');
+    const lightVal = document.getElementById('lightVal');
+    lightSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      hemiLight.intensity = v;
+      dirLight.intensity = v * 0.8;
+      lightVal.textContent = v.toFixed(1);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- 8. ВСПОМОГАТЕЛЬНОЕ ДВИЖЕНИЕ ---
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const move = new THREE.Vector3();
+
+    function resolveCollisions() {
+      const px = camera.position.x;
+      const pz = camera.position.z;
+
+      for (let i = 0; i < colliders.length; i++) {
+        const c = colliders[i];
+        const dx = camera.position.x - c.x;
+        const dz = camera.position.z - c.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < c.r * c.r) {
+          const dist = Math.sqrt(distSq) || 0.0001;
+          camera.position.x = c.x + (dx / dist) * c.r;
+          camera.position.z = c.z + (dz / dist) * c.r;
+        }
+      }
+
+      // не даём уйти за край земли
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x, -WORLD_LIMIT, WORLD_LIMIT);
+      camera.position.z = THREE.MathUtils.clamp(camera.position.z, -WORLD_LIMIT, WORLD_LIMIT);
+    }
+
+    // --- 9. ЦИКЛ АНИМАЦИИ ---
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const elapsed = clock.getElapsedTime();
+
+      // Движение
+      const speed = 6.5 * dt;
+      forward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+
+      move.set(0, 0, 0);
+      if (keys['KeyW'] || keys['ArrowUp']) move.add(forward);
+      if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
+      if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
+      if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
+
+      if (move.lengthSq() > 0) {
+        move.normalize().multiplyScalar(speed);
+        camera.position.x += move.x;
+        camera.position.z += move.z;
+        resolveCollisions();
+      }
+
+      // Плавное следование за рельефом
+      const targetY = getTerrainHeight(camera.position.x, camera.position.z) + 1.85;
+      camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 9);
+
+      // Поворот взгляда
+      camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+
+      // Колыхание крон
+      for (let i = 0; i < foliageMeshes.length; i++) {
+        foliageMeshes[i].rotation.z = Math.sin(elapsed * 0.8 + i) * 0.03;
+      }
+
+      // ИСПРАВЛЕНИЕ: солнце и его тензевая камера едут за игроком,
+      // иначе тени пропадали при отходе от центра карты
+      dirLight.position.set(camera.position.x + 15, 45, camera.position.z + 10);
+      dirLight.target.position.set(camera.position.x, 0, camera.position.z);
+      dirLight.target.updateMatrixWorld();
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
