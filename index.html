@@ -40,8 +40,8 @@
             <input id="fogDensityRange" type="range" min="0.00002" max="0.01" step="0.00001" value="0.003">
         </label>
         <label class="rp-row">
-            <span class="rp-label">Яркость неба <span id="skyLightVal">1.00</span></span>
-            <input id="skyLightRange" type="range" min="0.4" max="2.0" step="0.05" value="1.0">
+            <span class="rp-label">Яркость неба <span id="skyLightVal">1.50</span></span>
+            <input id="skyLightRange" type="range" min="0.4" max="3.0" step="0.05" value="1.5">
         </label>
     </div>
     <div id="crosshair"></div>
@@ -98,7 +98,7 @@ scene.fog = new THREE.FogExp2(fogColor, FOG_EXP_DENSITY);
 
 // Низовой туман: экспоненциальная дымка — только ниже FOG_TOP_M,
 // к границе плавно сходит на нет, выше 700 м её нет вовсе.
-const FOG_TOP_M      = 800; // м — потолок низового экспоненциального тумана
+const FOG_TOP_M      = 1000; // м — потолок низового экспоненциального тумана
 const FOG_TOP_FADE_M = 150; // м — плавное затухание перед границей (550…700 м)
 const FOG_TOP_FROM_GLSL = (FOG_TOP_M - FOG_TOP_FADE_M).toFixed(1);
 const FOG_TOP_TO_GLSL   = FOG_TOP_M.toFixed(1);
@@ -266,10 +266,10 @@ renderer.toneMappingExposure = 1.25;
 document.body.appendChild(renderer.domElement);
 
 // Свет — настроение образца: холодный свет неба и тёплый отражённый от земли
-const hemiLight = new THREE.HemisphereLight(0xdbe6ea, 0x3b2d22, 1.0);
+const hemiLight = new THREE.HemisphereLight(0xdbe6ea, 0xc0a484, 1.5);
 scene.add(hemiLight);
 
-const dirLight = new THREE.DirectionalLight(0xfff0d8, 0.85);
+const dirLight = new THREE.DirectionalLight(0xfff0d8, 1.275);
 dirLight.position.set(TERRAIN_SIZE_M * 0.3, MAX_HEIGHT_M * 2, TERRAIN_SIZE_M * 0.15);
 dirLight.castShadow = true;
 const shadowRange = TERRAIN_SIZE_M * 0.5;
@@ -557,7 +557,7 @@ const groundDetailTex = createGroundDetailTexture();
 
 // Листва: цвет белый, реальный зелёный даёт инстанс-цвет вокруг 0x3b592c
 // (как leafMat в temp/forest.html)
-const treeMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, side: THREE.DoubleSide });
+const treeMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, side: THREE.DoubleSide });
 const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.85, metalness: 0.05 });
 const bushMat  = new THREE.MeshStandardMaterial({ color: 0x2c4222, roughness: 0.85, side: THREE.DoubleSide });
 const ruinMat         = new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.1, roughness: 0.85, flatShading: true, emissive: new THREE.Color(0x333333), emissiveIntensity: 1.0 });
@@ -568,9 +568,9 @@ const ruinMat         = new THREE.MeshStandardMaterial({ map: concreteTex, bumpM
 // со сферическими (гладкими) нормалями, сжатая в «линзу» (1.3, 0.65, 1.3)r.
 // Там r = 1.8 * масштаб дерева при высоте 15–22 * масштаб, то есть r ≈ 0.0973·h.
 const FOLIAGE_DETAIL = 1;
-const FOLIAGE_RADIUS_OF_HEIGHT = 1.8 / 18.5;
-const FOLIAGE_SQUASH_XZ = 1.3;
-const FOLIAGE_SQUASH_Y  = 0.65;
+const FOLIAGE_RADIUS_OF_HEIGHT = 2.8 / 18.5; // радиус кроны деревьев (эталон r = 1.8*scale)
+const FOLIAGE_SQUASH_XZ = 1.3; // ширина кроны деревьев
+const FOLIAGE_SQUASH_Y  = 0.65; // высота кроны
 
 function createFoliageLobe(radius, rand, cx, cy, cz) {
     const geo = new THREE.IcosahedronGeometry(1, FOLIAGE_DETAIL);
@@ -722,9 +722,9 @@ function createBeechVariant(rand, cfg) {
 const TREE_VARIANTS = (() => {
     const vrand = mulberry32(31337);
     return [
-        createBeechVariant(vrand, { heightMin: 15, heightMax: 62, radiusScale: 4.0, trunkTubular: 7, trunkRadial: 5, branchMin: 3, branchRange: 2, branchTubular: 3, branchRadial: 4 }),
-        createBeechVariant(vrand, { heightMin: 10, heightMax: 35, radiusScale: 2.5, trunkTubular: 6, trunkRadial: 5, branchMin: 2, branchRange: 2, branchTubular: 3, branchRadial: 4 }),
-        createBeechVariant(vrand, { heightMin: 6,  heightMax: 20, radiusScale: 1.8, trunkTubular: 5, trunkRadial: 4, branchMin: 2, branchRange: 1, branchTubular: 3, branchRadial: 3 })
+        createBeechVariant(vrand, { heightMin: 15, heightMax: 62, radiusScale: 2.0, trunkTubular: 7, trunkRadial: 5, branchMin: 3, branchRange: 2, branchTubular: 3, branchRadial: 4 }),
+        createBeechVariant(vrand, { heightMin: 10, heightMax: 35, radiusScale: 1.4, trunkTubular: 6, trunkRadial: 5, branchMin: 2, branchRange: 2, branchTubular: 3, branchRadial: 4 }),
+        createBeechVariant(vrand, { heightMin: 6,  heightMax: 20, radiusScale: 1.0, trunkTubular: 5, trunkRadial: 4, branchMin: 2, branchRange: 1, branchTubular: 3, branchRadial: 3 })
     ];
 })();
 
@@ -1643,7 +1643,7 @@ function loadMapObjects() {
                 ? (rv < 0.55 ? 0 : (rv < 0.9 ? 1 : 2))
                 : (rv < 0.28 ? 0 : (rv < 0.72 ? 1 : 2));
 
-            const scaleY  = 0.8 + rand() * 0.45;
+            const scaleY  = 0.8 + rand() * 0.55;
             const scaleXZ = scaleY * (0.85 + rand() * 0.3);
 
             dummy.position.set(tx, ty - 0.15, tz);
@@ -1652,9 +1652,10 @@ function loadMapObjects() {
             dummy.updateMatrix();
             dummy.matrix.toArray(treeMatrices, treeIdx * 16);
 
-            // Цвет листвы с вариациями вокруг базового 0x3b592c из temp/forest.html
-            color.setHex(0x3b592c);
-            color.offsetHSL((rand() - 0.5) * 0.06, (rand() - 0.5) * 0.18, (rand() - 0.5) * 0.14);
+            // Цвет листвы: базовый зелёный заметно светлее исходного 0x3b592c,
+            // чтобы кроны не уходили в почти чёрный в тени.
+            color.setHex(0x4a6e35);
+            color.offsetHSL((rand() - 0.5) * 0.06, (rand() - 0.5) * 0.18, (rand() - 0.5) * 0.08);
             treeColors[treeIdx * 3]     = color.r;
             treeColors[treeIdx * 3 + 1] = color.g;
             treeColors[treeIdx * 3 + 2] = color.b;
@@ -2162,7 +2163,7 @@ fogDensityRange.addEventListener('input', (e) => {
 skyLightRange.addEventListener('input', (e) => {
     const v = parseFloat(e.target.value);
     hemiLight.intensity = v;
-    dirLight.intensity  = v * 0.85; // солнце держит пропорцию из образца
+    dirLight.intensity  = v * 0.85;
     skyLightVal.textContent = v.toFixed(2);
 });
 
