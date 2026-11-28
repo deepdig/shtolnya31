@@ -178,6 +178,9 @@
 
         <div>
             <h3>Вид</h3>
+            <label style="flex-direction: row; align-items: center; gap: 6px; margin-bottom: 8px;">
+                <input type="checkbox" id="road-preview" style="width:auto;"> Дорога как в игре (9 м)
+            </label>
             <button onclick="centerView()" style="width:100%;">🔍 Сбросить вид (Центр)</button>
             <div id="zoom-info" style="margin-top:8px;">Масштаб: 100%</div>
             <div style="font-size:11px; color:#777; margin-top:4px; text-align:center;">Колесо — зум<br>Средняя / Пробел+ЛКМ — панорама</div>
@@ -1078,6 +1081,64 @@
             }
         }
 
+        // === ПРЕДПРОСМОТР ДОРОГИ ===
+        // В игре дорога не объект, а текстура на ландшафте: асфальт шириной 9 м
+        // рисуется в шейдере по полю расстояний до оси. Здесь показываем её
+        // в реальную ширину, чтобы автор видел настоящую полосу, а не линию 6 px.
+        const ROAD_WIDTH_M = 9;
+        const ROAD_PREVIEW_SIZE = 2048;
+        const roadPreviewCanvas = document.createElement('canvas');
+        roadPreviewCanvas.width = ROAD_PREVIEW_SIZE;
+        roadPreviewCanvas.height = ROAD_PREVIEW_SIZE;
+        const ctxRoadPreview = roadPreviewCanvas.getContext('2d');
+        const roadPreviewCheckbox = document.getElementById('road-preview');
+        let roadPreviewSig = '';
+
+        function worldSizeMeters() {
+            const km = parseFloat(document.getElementById('world-size-km').value);
+            return (isFinite(km) && km > 0 ? km : 9) * 1000;
+        }
+
+        function roadPreviewSignature() {
+            let roads = 0, points = 0;
+            for (const obj of mapObjects) {
+                if (obj.type !== 'road') continue;
+                roads++;
+                points += obj.points.length;
+            }
+            return `${worldSizeMeters()}|${currentTool}|${currentRoadPoints.length}|${roads}|${points}`;
+        }
+
+        function rebuildRoadPreview() {
+            ctxRoadPreview.clearRect(0, 0, ROAD_PREVIEW_SIZE, ROAD_PREVIEW_SIZE);
+            const scale = ROAD_PREVIEW_SIZE / SIZE;
+            const widthPx = ROAD_WIDTH_M * ROAD_PREVIEW_SIZE / worldSizeMeters();
+            ctxRoadPreview.strokeStyle = '#54504a';
+            ctxRoadPreview.fillStyle = '#54504a';
+            ctxRoadPreview.lineWidth = widthPx;
+            ctxRoadPreview.lineJoin = 'round';
+            ctxRoadPreview.lineCap = 'round';
+
+            const draw = (pts) => {
+                if (!pts || pts.length === 0) return;
+                if (pts.length === 1) {
+                    ctxRoadPreview.beginPath();
+                    ctxRoadPreview.arc(pts[0].x * scale, pts[0].y * scale, widthPx / 2, 0, Math.PI * 2);
+                    ctxRoadPreview.fill();
+                    return;
+                }
+                ctxRoadPreview.beginPath();
+                ctxRoadPreview.moveTo(pts[0].x * scale, pts[0].y * scale);
+                for (let i = 1; i < pts.length; i++) ctxRoadPreview.lineTo(pts[i].x * scale, pts[i].y * scale);
+                ctxRoadPreview.stroke();
+            };
+
+            for (const obj of mapObjects) if (obj.type === 'road') draw(obj.points);
+            if (currentTool === 'road') draw(currentRoadPoints);
+        }
+
+        roadPreviewCheckbox.addEventListener('change', () => drawOverlay());
+
         // === ОТРИСОВКА ===
         function drawOverlay() {
             ctxOverlay.clearRect(0, 0, SIZE, SIZE);
@@ -1097,6 +1158,18 @@
             // 2. Лес — один блит из кэша (не перерисовываем 29 тыс. точек на mousemove)
             ctxOverlay.drawImage(forestCanvas, 0, 0);
 
+            // 2b. Дорога в реальную ширину — если включён предпросмотр
+            const roadPreviewOn = roadPreviewCheckbox.checked ||
+                (currentTool === 'road' && currentRoadPoints.length > 0);
+            if (roadPreviewOn) {
+                const sig = roadPreviewSignature();
+                if (sig !== roadPreviewSig) {
+                    rebuildRoadPreview();
+                    roadPreviewSig = sig;
+                }
+                ctxOverlay.drawImage(roadPreviewCanvas, 0, 0, SIZE, SIZE);
+            }
+
             // 3. Прочие объекты
             for (const obj of mapObjects) {
                 if (obj.type === 'road') {
@@ -1106,8 +1179,10 @@
                         for (let i = 1; i < obj.points.length; i++)
                             ctxOverlay.lineTo(obj.points[i].x, obj.points[i].y);
                     }
-                    ctxOverlay.strokeStyle = '#888';
-                    ctxOverlay.lineWidth = 6;
+                    // При включённом предпросмотре — только тонкая осевая,
+                    // иначе маркер 6 px закрывает реальную ширину 9 м.
+                    ctxOverlay.strokeStyle = roadPreviewOn ? 'rgba(230, 230, 230, 0.55)' : '#888';
+                    ctxOverlay.lineWidth = roadPreviewOn ? 1 : 6;
                     ctxOverlay.lineJoin = 'round';
                     ctxOverlay.stroke();
                 } else if (obj.type === 'adit') {
