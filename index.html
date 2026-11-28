@@ -47,6 +47,10 @@
             <span class="rp-label">Сезон <span id="seasonVal">50% лето</span></span>
             <input id="seasonRange" type="range" min="0" max="1" step="0.01" value="0.5">
         </label>
+        <label class="rp-row">
+            <span class="rp-label">Голые деревья <span id="bareVal">50%</span></span>
+            <input id="bareRange" type="range" min="0" max="100" step="1" value="50">
+        </label>
     </div>
     <div id="crosshair"></div>
     <div id="hint">Нажмите, чтобы войти в штольню</div>
@@ -1483,7 +1487,8 @@ const forestState = {
     bushOf: null,        // Uint8Array total
     cellStart: null,
     cellList: null,
-    seasonOf: null        // Float32Array total — базовый коэффициент сезона
+    seasonOf: null,       // Float32Array total — базовый коэффициент сезона
+    bareOf: null          // Float32Array total — стабильный порог «голости» 0..1
 };
 
 // Осенне-летняя палитра крон: ржавый → золото → зелёный.
@@ -1494,6 +1499,9 @@ const FOREST_SEASON_COLORS = [
 ];
 // 0 — осень, 1 — лето; меняется слайдером «Сезон» в панели атмосферы.
 let forestSeason = 0.5;
+// 0 — все деревья с кронами, 1 — все голые; меняется слайдером «Голые деревья».
+// По умолчанию половина леса без крон.
+let forestBareFraction = 0.5;
 
 // Палитра поверхности: летом трава и лесная подстилка зелёные, осенью —
 // сухая трава и опавший лист. Камень и снег остаются без изменений.
@@ -1573,6 +1581,7 @@ function rebuildForestInstances(camX, camZ) {
 
     const variantCount = s.variants.length;
     const counts = new Int32Array(variantCount);
+    const leafCounts = new Int32Array(variantCount);
     let bushCount = 0;
 
     const woodArrays = s.variants.map(v => v.wood.instanceMatrix.array);
@@ -1586,20 +1595,27 @@ function rebuildForestInstances(camX, camZ) {
         const dst = counts[variant] * 16;
 
         const woodArr = woodArrays[variant];
-        const leafArr = leafArrays[variant];
-        for (let j = 0; j < 16; j++) {
-            woodArr[dst + j] = s.matrices[src + j];
-            leafArr[dst + j] = s.matrices[src + j];
-        }
-
-        const leafCol = leafColorArrays[variant];
-        const sc = i * 3;
-        const dc = counts[variant] * 3;
-        leafCol[dc]     = s.colors[sc];
-        leafCol[dc + 1] = s.colors[sc + 1];
-        leafCol[dc + 2] = s.colors[sc + 2];
+        for (let j = 0; j < 16; j++) woodArr[dst + j] = s.matrices[src + j];
 
         counts[variant]++;
+
+        // Голые деревья: крона не попадает в буфер листвы — остаются ствол и ветви.
+        // У каждого дерева свой фиксированный порог, поэтому слайдер только добавляет
+        // голые деревья и никогда не возвращает крону уже оголённому дереву.
+        if (s.bareOf[i] >= forestBareFraction) {
+            const leafArr = leafArrays[variant];
+            const leafDst = leafCounts[variant] * 16;
+            for (let j = 0; j < 16; j++) leafArr[leafDst + j] = s.matrices[src + j];
+
+            const leafCol = leafColorArrays[variant];
+            const sc = i * 3;
+            const dc = leafCounts[variant] * 3;
+            leafCol[dc]     = s.colors[sc];
+            leafCol[dc + 1] = s.colors[sc + 1];
+            leafCol[dc + 2] = s.colors[sc + 2];
+
+            leafCounts[variant]++;
+        }
 
         if (bushArray && s.bushOf[i]) {
             const bdst = bushCount * 16;
@@ -1639,7 +1655,7 @@ function rebuildForestInstances(camX, camZ) {
     for (let v = 0; v < variantCount; v++) {
         const pair = s.variants[v];
         pair.wood.count = counts[v];
-        pair.leaves.count = counts[v];
+        pair.leaves.count = leafCounts[v];
         pair.wood.instanceMatrix.needsUpdate = true;
         pair.leaves.instanceMatrix.needsUpdate = true;
         pair.leaves.instanceColor.needsUpdate = true;
@@ -1694,6 +1710,8 @@ function loadMapObjects() {
     const rand = mulberry32(window.FOREST_DATA && window.FOREST_DATA.seed || 31337);
     // Отдельный ГПСЧ для сезона: не сдвигает последовательность размещения леса
     const seasonRand = mulberry32(0x5EED51);
+    // Отдельный ГПСЧ для «голости»: тоже не сдвигает размещение леса
+    const bareRand = mulberry32(0xB4A31);
 
     const maxTrees = Math.max(1, treeSources.length * DENSITY_MULTIPLIER);
     const ruinCount = Math.max(1, objects.filter(o => o.type === 'ruin').length);
@@ -1704,6 +1722,7 @@ function loadMapObjects() {
     const treeMatrices = new Float32Array(maxTrees * 16);
     const treeColors   = new Float32Array(maxTrees * 3);
     const treeSeason   = new Float32Array(maxTrees);
+    const treeBare     = new Float32Array(maxTrees);
     const treeVariant  = new Int32Array(maxTrees);
     const treeCellOf   = new Int32Array(maxTrees);
     const bushMatrices = new Float32Array(maxTrees * 16);
@@ -1788,6 +1807,7 @@ function loadMapObjects() {
             // Коэффициент сезона берём из отдельного ГПСЧ, чтобы не сдвигать
             // основную последовательность rand() и не менять расположение леса.
             treeSeason[treeIdx] = 0.12 + seasonRand() * 0.76;
+            treeBare[treeIdx] = bareRand();
 
             treeVariant[treeIdx] = variant;
             variantTotals[variant]++;
@@ -1884,6 +1904,7 @@ function loadMapObjects() {
     forestState.matrices = treeMatrices;
     forestState.colors = treeColors;
     forestState.seasonOf = treeSeason;
+    forestState.bareOf = treeBare;
     forestState.variantOf = treeVariant;
     forestState.bushMatrices = bushMatrices;
     forestState.bushOf = bushOf;
@@ -2288,6 +2309,8 @@ const skyLightRange   = document.getElementById('skyLightRange');
 const skyLightVal     = document.getElementById('skyLightVal');
 const seasonRange     = document.getElementById('seasonRange');
 const seasonVal       = document.getElementById('seasonVal');
+const bareRange       = document.getElementById('bareRange');
+const bareVal         = document.getElementById('bareVal');
 
 fogDensityRange.addEventListener('input', (e) => {
     const v = parseFloat(e.target.value);
@@ -2313,6 +2336,19 @@ seasonRange.addEventListener('input', (e) => {
         seasonUpdateQueued = false;
         applyForestSeason();
         applyTerrainSeason();
+        if (forestState.built) rebuildForestInstances(camera.position.x, camera.position.z);
+    });
+});
+
+// «Голые деревья»: пересчёт не чаще одного раза за кадр, матрицы не пересобираются
+let bareUpdateQueued = false;
+bareRange.addEventListener('input', (e) => {
+    forestBareFraction = parseFloat(e.target.value) / 100;
+    bareVal.textContent = `${Math.round(forestBareFraction * 100)}%`;
+    if (bareUpdateQueued) return;
+    bareUpdateQueued = true;
+    requestAnimationFrame(() => {
+        bareUpdateQueued = false;
         if (forestState.built) rebuildForestInstances(camera.position.x, camera.position.z);
     });
 });
